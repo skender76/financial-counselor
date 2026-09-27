@@ -52,6 +52,11 @@ DATA_FILE = os.path.join(BASE_DIR, 'dati.json')
 # che l'ultima sia terminata.
 DATA_LOCK = threading.Lock()
 
+# Il server risponde solo a richieste indirizzate a sé stesso: blocca il "DNS
+# rebinding", con cui un sito esterno potrebbe farsi passare per localhost e
+# leggere o sovrascrivere dati.json.
+ALLOWED_HOSTS = {'localhost:%d' % PORT, '127.0.0.1:%d' % PORT}
+
 
 def read_data_file():
     if not os.path.exists(DATA_FILE):
@@ -123,7 +128,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _reject_foreign_request(self, require_json):
+        """Invia l'errore e restituisce True se la richiesta va rifiutata."""
+        if self.headers.get('Host') not in ALLOWED_HOSTS:
+            self._send_json({'status': 'error', 'message': 'Host non consentito.'}, status=403)
+            return True
+        # Solo richieste JSON per le operazioni che scrivono o agiscono: un
+        # altro sito aperto nel browser può inviare a localhost un POST
+        # "semplice" (es. un form text/plain che contiene JSON valido), ma non
+        # con Content-Type application/json senza un preflight CORS, che questo
+        # server non accetta. Così non può sovrascrivere dati.json, usare il
+        # credito API del consulente AI o spegnere la dashboard.
+        if require_json and not (self.headers.get('Content-Type') or '').startswith('application/json'):
+            self._send_json({'status': 'error', 'message': 'Content-Type non valido: è richiesto application/json.'}, status=415)
+            return True
+        return False
+
     def do_GET(self):
+        if self._reject_foreign_request(require_json=False):
+            return
         if self.path == '/api/data':
             self._send_json(read_data_file())
             return
@@ -136,6 +159,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404, 'Percorso non gestito: ' + self.path)
 
     def do_POST(self):
+        if self._reject_foreign_request(require_json=True):
+            return
         if self.path == '/api/shutdown':
             self._handle_shutdown()
             return
@@ -159,12 +184,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({'status': 'error', 'message': 'Errore scrivendo dati.json: ' + str(e)}, status=500)
 
     def _handle_shutdown(self):
-        # Solo richieste JSON: un altro sito aperto nel browser non può inviare
-        # questo Content-Type a localhost senza un preflight CORS (che questo
-        # server non accetta), quindi non può spegnere la dashboard.
-        if not (self.headers.get('Content-Type') or '').startswith('application/json'):
-            self._send_json({'status': 'error', 'message': 'Content-Type non valido.'}, status=415)
-            return
         self._send_json({'status': 'ok'})
         print('Richiesta di chiusura dalla dashboard.')
         request_shutdown(self.server)
