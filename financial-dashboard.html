@@ -3854,6 +3854,11 @@
   let editingApiKeyId = null;
   let apiKeyProviderTouched = false;
 
+  // Messaggio per un server avviato prima dell'aggiunta delle chiavi API:
+  // la pagina (sempre riletta dal disco) è nuova, il processo server.py no.
+  const OUTDATED_SERVER_MESSAGE = 'il server della dashboard in esecuzione è di una versione precedente e non gestisce le chiavi API. Premi "⏻ Chiudi dashboard" e riavviala con avvia-dashboard.command.';
+  let apiKeysLoadError = null;
+
   async function apiKeysRequest(body) {
     let res;
     try {
@@ -3867,6 +3872,7 @@
     }
     let data = null;
     try { data = await res.json(); } catch { /* risposta non JSON */ }
+    if (res.status === 404 && !data) throw new Error(OUTDATED_SERVER_MESSAGE);
     if (!res.ok || !data || data.status === 'error') {
       throw new Error((data && data.message) || ('HTTP ' + res.status));
     }
@@ -3876,9 +3882,11 @@
   async function loadApiKeys() {
     try {
       apiKeysState = await apiKeysRequest();
+      apiKeysLoadError = null;
     } catch (err) {
+      apiKeysLoadError = err.message;
       document.getElementById('apiKeysList').innerHTML =
-        '<div class="expense-empty">Impossibile leggere le chiavi API: ' + escapeHtml(err.message) + '</div>';
+        '<div class="expense-empty">⚠️ Impossibile leggere le chiavi API: ' + escapeHtml(err.message) + '</div>';
       return;
     }
     renderApiKeys();
@@ -3924,9 +3932,13 @@
   }
 
   // Riconosce il fornitore dal prefisso della chiave (solo per precompilare
-  // il menu: resta modificabile). sk-ant- va controllato prima di sk-.
+  // il menu: resta modificabile). I prefissi specifici (sk-ant-, sk-or-) vanno
+  // controllati prima del generico sk-. DeepSeek usa anch'esso sk- e Mistral
+  // non ha un prefisso: per loro il fornitore si sceglie a mano.
   function detectApiKeyProvider(value) {
     if (value.startsWith('sk-ant-')) return 'anthropic';
+    if (value.startsWith('sk-or-')) return 'openrouter';
+    if (value.startsWith('xai-')) return 'xai';
     if (value.startsWith('AIza')) return 'gemini';
     if (value.startsWith('sk-')) return 'openai';
     return null;
@@ -3959,6 +3971,12 @@
   }
 
   function openApiKeyModal(id) {
+    // Senza l'elenco dei fornitori (server non raggiungibile o vecchio) il
+    // form resterebbe con il menu vuoto: meglio spiegare subito il perché.
+    if (!apiKeysState.providers.length) {
+      alert('Impossibile aggiungere o modificare chiavi: ' + (apiKeysLoadError || 'elenco dei fornitori non disponibile.'));
+      return;
+    }
     editingApiKeyId = id || null;
     const key = id ? apiKeysState.keys.find(k => k.id === id) : null;
     if (id && !key) return;

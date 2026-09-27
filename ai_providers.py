@@ -15,7 +15,9 @@ da dati.json così le chiavi non finiscono mai in export o backup. Formato:
       ]
     }
 
-Il consulente usa solo la chiave attiva (active_key_id): se è scaduta, la
+Fornitori: anthropic, openai, gemini, mistral, deepseek, xai, openrouter (gli
+ultimi quattro usano l'SDK openai con il loro indirizzo, vedi
+OpenAICompatibleProvider). Il consulente usa solo la chiave attiva (active_key_id): se è scaduta, la
 richiesta viene rifiutata con un messaggio chiaro. "model" vuoto = modello
 predefinito del fornitore (solo Anthropic ne ha uno; per OpenAI e Gemini è
 obbligatorio). Il file viene riletto a ogni richiesta: nessun riavvio.
@@ -87,12 +89,33 @@ class Provider:
         raise NotImplementedError
 
 
+def api_error_message(e):
+    """Il messaggio leggibile di un errore API (non il dump JSON completo)."""
+    body = getattr(e, 'body', None)
+    if isinstance(body, dict):
+        err = body.get('error', body)
+        if isinstance(err, dict) and isinstance(err.get('message'), str):
+            return err['message']
+    return str(getattr(e, 'message', e))
+
+
 class AnthropicProvider(Provider):
     name = 'anthropic'
-    label = 'Anthropic Claude'
+    label = 'Anthropic (Claude)'
     package = 'anthropic'
     default_model = 'claude-opus-5'
     max_tokens = 16000
+
+    # Opzioni supportate solo da alcuni modelli (per prefisso dell'ID): ai
+    # modelli non elencati, es. claude-haiku-4-5, si inviano solo modello,
+    # max_tokens e messaggi. claude-opus-5 copre anche claude-opus-5-5 ecc.
+    ADAPTIVE_THINKING_MODELS = ('claude-fable-5', 'claude-mythos-5', 'claude-opus-5',
+                                'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8',
+                                'claude-sonnet-5', 'claude-sonnet-4-6')
+    EFFORT_MODELS = ADAPTIVE_THINKING_MODELS + ('claude-opus-4-5',)
+    # Ripetizione lato server su un altro modello se i filtri di sicurezza
+    # rifiutano la richiesta (modelli con classificatori di sicurezza).
+    FALLBACK_MODELS = ('claude-opus-5', 'claude-fable-5-1')
 
     def import_sdk(self):
         import anthropic
@@ -101,28 +124,46 @@ class AnthropicProvider(Provider):
     def make_client(self, api_key):
         return self.import_sdk().Anthropic(api_key=api_key)
 
+    def request_options(self, model):
+        options = {}
+        if model.startswith(self.ADAPTIVE_THINKING_MODELS):
+            options['thinking'] = {'type': 'adaptive'}
+        if model.startswith(self.EFFORT_MODELS):
+            options['output_config'] = {'effort': 'medium'}
+        if model.startswith(self.FALLBACK_MODELS):
+            options['betas'] = ['server-side-fallback-2026-07-01']
+            options['extra_body'] = {'fallbacks': 'default'}
+        return options
+
+    def create(self, api_key, model, prompt, options):
+        params = dict(model=model, max_tokens=self.max_tokens,
+                      messages=[{'role': 'user', 'content': prompt}], **options)
+        messages = self.client(api_key).beta.messages if 'betas' in options else self.client(api_key).messages
+        return messages.create(**params)
+
     def ask(self, api_key, model, prompt):
         anthropic = self.import_sdk()
+        options = self.request_options(model)
         try:
-            response = self.client(api_key).beta.messages.create(
-                model=model,
-                max_tokens=self.max_tokens,
-                thinking={'type': 'adaptive'},
-                output_config={'effort': 'medium'},
-                messages=[{'role': 'user', 'content': prompt}],
-                # Se i filtri di sicurezza rifiutano la richiesta, l'API la
-                # ripete lato server su un modello alternativo scelto da Anthropic.
-                betas=['server-side-fallback-2026-07-01'],
-                extra_body={'fallbacks': 'default'},
-            )
+            try:
+                response = self.create(api_key, model, prompt, options)
+            except anthropic.BadRequestError as e:
+                # Rete di sicurezza per modelli non ancora nella tabella sopra:
+                # se un'opzione non è supportata, riprova una volta senza.
+                if not options or 'not supported' not in api_error_message(e).lower():
+                    raise
+                response = self.create(api_key, model, prompt, {})
         except anthropic.AuthenticationError:
             raise AdvisorError('chiave API Anthropic non valida.', 401)
+        except anthropic.NotFoundError as e:
+            raise AdvisorError('modello "%s" non trovato su Anthropic (controlla il nome del modello): %s'
+                               % (model, api_error_message(e)), 400)
         except anthropic.BadRequestError as e:
-            raise AdvisorError('richiesta rifiutata dal modello (prompt troppo lungo?): ' + e.message, 400)
+            raise AdvisorError('richiesta rifiutata da Anthropic: ' + api_error_message(e), 400)
         except anthropic.RateLimitError:
             raise AdvisorError('troppe richieste in poco tempo, riprova tra un minuto.', 429)
         except anthropic.APIStatusError as e:
-            raise AdvisorError('errore API Anthropic (%d): %s' % (e.status_code, e.message), 502)
+            raise AdvisorError('errore API Anthropic (%d): %s' % (e.status_code, api_error_message(e)), 502)
         except anthropic.APIConnectionError:
             raise AdvisorError('impossibile raggiungere l\'API Anthropic: controlla la connessione internet.', 502)
 
@@ -136,8 +177,9 @@ class AnthropicProvider(Provider):
 
 class OpenAIProvider(Provider):
     name = 'openai'
-    label = 'OpenAI'
+    label = 'OpenAI (ChatGPT)'
     package = 'openai'
+    vendor = 'OpenAI'   # nome breve per i messaggi di errore
 
     def import_sdk(self):
         import openai
@@ -146,21 +188,30 @@ class OpenAIProvider(Provider):
     def make_client(self, api_key):
         return self.import_sdk().OpenAI(api_key=api_key)
 
-    def ask(self, api_key, model, prompt):
+    def call(self, request):
+        """Esegue request() traducendo gli errori dell'SDK OpenAI in AdvisorError."""
         openai = self.import_sdk()
         try:
-            response = self.client(api_key).responses.create(model=model, input=prompt)
+            return request()
         except openai.AuthenticationError:
-            raise AdvisorError('chiave API OpenAI non valida.', 401)
+            raise AdvisorError('chiave API %s non valida.' % self.vendor, 401)
+        except openai.NotFoundError as e:
+            raise AdvisorError('modello non trovato su %s (controlla il nome del modello): %s' % (self.vendor, api_error_message(e)), 400)
         except openai.BadRequestError as e:
-            raise AdvisorError('richiesta rifiutata dal modello (prompt troppo lungo o modello inesistente?): ' + e.message, 400)
+            # Alcuni fornitori (es. xAI) segnalano una chiave sbagliata come 400
+            # "Incorrect API key" invece che come 401.
+            if 'api key' in api_error_message(e).lower():
+                raise AdvisorError('chiave API %s non valida.' % self.vendor, 401)
+            raise AdvisorError('richiesta rifiutata da %s: %s' % (self.vendor, api_error_message(e)), 400)
         except openai.RateLimitError:
-            raise AdvisorError('troppe richieste o credito esaurito su OpenAI, riprova più tardi.', 429)
+            raise AdvisorError('troppe richieste o credito esaurito su %s, riprova più tardi.' % self.vendor, 429)
         except openai.APIStatusError as e:
-            raise AdvisorError('errore API OpenAI (%d): %s' % (e.status_code, e.message), 502)
+            raise AdvisorError('errore API %s (%d): %s' % (self.vendor, e.status_code, api_error_message(e)), 502)
         except openai.APIConnectionError:
-            raise AdvisorError('impossibile raggiungere l\'API OpenAI: controlla la connessione internet.', 502)
+            raise AdvisorError('impossibile raggiungere l\'API %s: controlla la connessione internet.' % self.vendor, 502)
 
+    def ask(self, api_key, model, prompt):
+        response = self.call(lambda: self.client(api_key).responses.create(model=model, input=prompt))
         text = (response.output_text or '').strip()
         details = getattr(response, 'incomplete_details', None)
         if details is not None and getattr(details, 'reason', None) == 'max_output_tokens':
@@ -170,9 +221,57 @@ class OpenAIProvider(Provider):
         return text
 
 
+class OpenAICompatibleProvider(OpenAIProvider):
+    """Fornitori con API compatibile con quella di OpenAI (chat completions):
+    stesso SDK openai, cambia solo l'indirizzo del server (base_url)."""
+    base_url = ''
+
+    def make_client(self, api_key):
+        return self.import_sdk().OpenAI(api_key=api_key, base_url=self.base_url)
+
+    def ask(self, api_key, model, prompt):
+        response = self.call(lambda: self.client(api_key).chat.completions.create(
+            model=model, messages=[{'role': 'user', 'content': prompt}]))
+        choice = response.choices[0] if response.choices else None
+        text = ((choice.message.content if choice else None) or '').strip()
+        if not text:
+            raise AdvisorError('il modello non ha restituito testo (risposta vuota o rifiutata).', 422)
+        if choice.finish_reason == 'length':
+            text += TRUNCATED_NOTE
+        return text
+
+
+class MistralProvider(OpenAICompatibleProvider):
+    name = 'mistral'
+    label = 'Mistral AI'
+    vendor = 'Mistral'
+    base_url = 'https://api.mistral.ai/v1'
+
+
+class DeepSeekProvider(OpenAICompatibleProvider):
+    name = 'deepseek'
+    label = 'DeepSeek'
+    vendor = 'DeepSeek'
+    base_url = 'https://api.deepseek.com'
+
+
+class XAIProvider(OpenAICompatibleProvider):
+    name = 'xai'
+    label = 'xAI (Grok)'
+    vendor = 'xAI'
+    base_url = 'https://api.x.ai/v1'
+
+
+class OpenRouterProvider(OpenAICompatibleProvider):
+    name = 'openrouter'
+    label = 'OpenRouter (più fornitori)'
+    vendor = 'OpenRouter'
+    base_url = 'https://openrouter.ai/api/v1'
+
+
 class GeminiProvider(Provider):
     name = 'gemini'
-    label = 'Google Gemini'
+    label = 'Google (Gemini)'
     package = 'google-genai'
 
     def import_sdk(self):
@@ -217,7 +316,10 @@ class GeminiProvider(Provider):
         return text
 
 
-PROVIDERS = {p.name: p for p in (AnthropicProvider(), OpenAIProvider(), GeminiProvider())}
+PROVIDERS = {p.name: p for p in (
+    AnthropicProvider(), OpenAIProvider(), GeminiProvider(),
+    MistralProvider(), DeepSeekProvider(), XAIProvider(), OpenRouterProvider(),
+)}
 
 
 # ===== ai-config.json: elenco delle chiavi API =====
