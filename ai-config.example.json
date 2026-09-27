@@ -1,0 +1,9 @@
+{
+  "_istruzioni": "Copia questo file in ai-config.json (escluso da git) e inserisci le chiavi. 'provider' sceglie il fornitore attivo: anthropic, openai o gemini. Se api_key è vuota si usa la variabile d'ambiente del fornitore. Per openai e gemini indica il nome del modello preso dalla documentazione del fornitore. Installa l'SDK del fornitore scelto: .venv/bin/python -m pip install anthropic | openai | google-genai",
+  "provider": "anthropic",
+  "providers": {
+    "anthropic": { "api_key": "", "model": "claude-opus-5" },
+    "openai":    { "api_key": "", "model": "" },
+    "gemini":    { "api_key": "", "model": "" }
+  }
+}

@@ -443,6 +443,7 @@
     <button class="btn-edit" onclick="document.getElementById('importFileInput').click()" title="Importa un file di backup generato da questa dashboard">📤 Importa backup</button>
     <button class="btn-edit" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
     <button class="btn-edit" onclick="openModal()">✏️ Aggiorna dati</button>
+    <button class="btn-edit" onclick="shutdownDashboard()" title="Salva i dati e ferma il server locale della dashboard">⏻ Chiudi dashboard</button>
   </div>
 </div>
 
@@ -1023,19 +1024,51 @@
     return out;
   }
 
+  // Restituisce una Promise che si risolve con true/false (salvataggio riuscito
+  // o no): le chiamate normali la ignorano, shutdownDashboard() la attende.
   function syncToServerFile() {
-    fetch(SYNC_API, {
+    return fetch(SYNC_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(gatherFullState()),
     }).then(function(res) {
       window.__fileSyncOk = !!(res && res.ok);
       updateSyncIndicator();
+      return window.__fileSyncOk;
     }).catch(function(err) {
       window.__fileSyncOk = false;
       console.warn('Impossibile salvare su file:', err.message);
       updateSyncIndicator();
+      return false;
     });
+  }
+
+  // Chiusura ordinata: prima un ultimo salvataggio completo su dati.json
+  // (atteso, non "fire and forget"), poi si chiede a server.py di fermarsi.
+  async function shutdownDashboard() {
+    if (!confirm('Chiudere la dashboard? I dati vengono salvati in dati.json e il server locale si ferma: per riaprirla servirà di nuovo avvia-dashboard.command.')) return;
+
+    const saved = await syncToServerFile();
+    if (!saved && !confirm('ATTENZIONE: l\'ultimo salvataggio su dati.json NON è riuscito (server.py non raggiungibile?). Le modifiche restano solo in questo browser. Chiudere comunque?')) return;
+
+    try {
+      const res = await fetch('/api/shutdown', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    } catch (err) {
+      alert('Non sono riuscito a fermare il server (' + err.message + '). Se è già chiuso non serve fare altro; altrimenti chiudi la finestra del Terminale.');
+      return;
+    }
+
+    document.body.innerHTML =
+      '<div style="max-width:480px;margin:80px auto;text-align:center;">' +
+      '<h1 style="font-size:20px;margin-bottom:12px;">Dashboard chiusa</h1>' +
+      '<p style="color:var(--text-secondary);">' +
+      (saved ? 'I dati sono stati salvati in dati.json.' : 'Attenzione: l\'ultimo salvataggio su dati.json non è riuscito.') +
+      ' Il server locale è stato fermato: puoi chiudere questa scheda.<br>Per riaprire la dashboard, fai doppio click su avvia-dashboard.command.</p></div>';
   }
 
   function updateSyncIndicator() {
@@ -1158,7 +1191,7 @@
   // Snapshot di contesto mercato/fiscale — raccolto via ricerca web il 04/08/2026.
   // NON è un feed live: per aggiornarlo bisogna rifare la ricerca e modificare
   // questo blocco a mano. Nessun connettore di mercato/fiscale è collegato,
-  // quindi il chatbot (Claude via server.py) non ha accesso a
+  // quindi il chatbot (fornitore AI scelto in ai-config.json) non ha accesso a
   // internet in tempo reale: questo blocco è l'unico contesto "esterno" che riceve.
   const CONTEXT_AS_OF = '2026-08-04';
   const MARKET_CONTEXT = [
@@ -3427,6 +3460,23 @@
 
   let chatHistory = loadChat();
 
+  // Fornitore/modello attivi, letti da /api/ai-info all'avvio (vedi
+  // loadAdvisorInfo): mostrati nella nota sotto la chat.
+  let advisorModelLabel = 'fornitore AI configurato in server.py';
+
+  async function loadAdvisorInfo() {
+    try {
+      const res = await fetch('/api/ai-info');
+      const info = await res.json();
+      advisorModelLabel = info.ready
+        ? info.label + ' (' + info.model + ')'
+        : 'non attivo — ' + info.problem;
+    } catch {
+      advisorModelLabel = 'non disponibile (server.py non raggiungibile)';
+    }
+    renderChat();
+  }
+
   // Allegato in staging per il prossimo messaggio: solo file di testo (.txt/.csv/.md),
   // letti con FileReader. Nessun parsing di PDF/Word: non c'è una libreria di
   // estrazione testo nella pagina, e /api/ask accetta solo testo.
@@ -3487,7 +3537,7 @@
 
     document.getElementById('chatContextNote').textContent =
       'Ogni domanda passa prima da una calcolatrice esterna deterministica (i conti non li fa il modello "a mente"), poi riceve dati finanziari attuali + snapshot fiscale/di mercato raccolto al ' + CONTEXT_AS_OF +
-      ' + la memoria a lungo termine qui sopra (sopravvive alla cancellazione della chat). Puoi allegare un file di testo (📎, solo .txt/.csv/.md, nessun limite di lunghezza) o un documento KID già salvato su un investimento (📄) da includere nella prossima domanda — rimuovilo con "✕ Rimuovi" se il messaggio risulta troppo lungo per il modello. Modello: Claude Opus 5 via server.py. Per decisioni importanti, verifica con un consulente abilitato.';
+      ' + la memoria a lungo termine qui sopra (sopravvive alla cancellazione della chat). Puoi allegare un file di testo (📎, solo .txt/.csv/.md, nessun limite di lunghezza) o un documento KID già salvato su un investimento (📄) da includere nella prossima domanda — rimuovilo con "✕ Rimuovi" se il messaggio risulta troppo lungo per il modello. Modello: ' + advisorModelLabel + '. Per decisioni importanti, verifica con un consulente abilitato.';
   }
 
   function escapeHtml(s) {
@@ -3630,9 +3680,10 @@
     ].join('\n');
   }
 
-  // Il consulente AI passa da server.py, che inoltra il prompt all'API
-  // Anthropic (endpoint /api/ask). I prompt includono già snapshot finanziario
-  // e memoria, quindi basta inviare il testo del prompt.
+  // Il consulente AI passa da server.py, che inoltra il prompt al fornitore AI
+  // scelto in ai-config.json (Anthropic, OpenAI, Gemini — endpoint /api/ask).
+  // I prompt includono già snapshot finanziario e memoria, quindi basta
+  // inviare il testo del prompt.
   const ASK_API = '/api/ask';
 
   async function askAdvisor(prompt) {
@@ -3938,6 +3989,7 @@
   applyMemoryCollapse(loadMemoryCollapsed());
   applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
   updateSyncIndicator();
+  loadAdvisorInfo();
 </script>
 </body>
 </html>

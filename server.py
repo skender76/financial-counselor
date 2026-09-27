@@ -7,16 +7,20 @@ Cosa fa:
 - Espone due endpoint per la persistenza vera su disco:
     GET  /api/data  -> restituisce il contenuto di dati.json (o {} se non esiste ancora)
     POST /api/data  -> sovrascrive dati.json con il corpo JSON ricevuto
-- Espone POST /api/ask per il consulente AI: inoltra il prompt a Claude tramite
-  l'SDK ufficiale Anthropic.
+- Espone il consulente AI:
+    POST /api/ask     -> inoltra il prompt al fornitore AI configurato
+    GET  /api/ai-info -> fornitore/modello attivi e cosa eventualmente manca
+- Chiusura ordinata (attende la fine di un eventuale salvataggio di dati.json):
+    POST /api/shutdown (pulsante "Chiudi dashboard"), Ctrl+C, oppure la
+    chiusura della finestra del Terminale.
+  Fornitori (Anthropic, OpenAI, Gemini), chiavi API e modelli si scelgono in
+  ai-config.json: vedi ai_providers.py e ai-config.example.json.
 - Per conti/movimenti/salvataggio basta la libreria standard di Python 3.
-  Solo il consulente AI richiede in più:
-    pip3 install anthropic
-  e una chiave API, in uno di questi modi:
-    - variabile d'ambiente ANTHROPIC_API_KEY
-    - oppure un file "anthropic-api-key.txt" (solo la chiave) nella stessa
-      cartella di questo script — comodo con il doppio click su
-      avvia-dashboard.command, che non eredita le variabili della shell.
+  Solo il consulente AI richiede in più l'SDK del fornitore scelto, installato
+  nell'ambiente virtuale del progetto (Python di Homebrew non permette pip
+  install globale):
+    python3 -m venv .venv && .venv/bin/python -m pip install anthropic
+  avvia-dashboard.command usa .venv automaticamente se esiste.
 
 Come si usa:
     python3 server.py
@@ -28,20 +32,25 @@ I dati vengono scritti in dati.json, nella STESSA cartella di questo script:
 backup (Dropbox, iCloud, chiavetta USB, ecc.) in qualunque momento.
 """
 
+import errno
 import json
 import os
+import signal
 import sys
+import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import ai_providers
 
 PORT = 8765
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DASHBOARD_FILE = os.path.join(BASE_DIR, 'financial-dashboard.html')
 DATA_FILE = os.path.join(BASE_DIR, 'dati.json')
-API_KEY_FILE = os.path.join(BASE_DIR, 'anthropic-api-key.txt')
 
-ADVISOR_MODEL = 'claude-opus-5'
-ADVISOR_MAX_TOKENS = 16000
+# Serializza le scritture di dati.json e permette alla chiusura di aspettare
+# che l'ultima sia terminata.
+DATA_LOCK = threading.Lock()
 
 
 def read_data_file():
@@ -70,69 +79,16 @@ def write_data_file(data):
     # resta comunque nel suo stato precedente valido, invece di restare
     # a metà scritto e corrotto.
     tmp_path = DATA_FILE + '.tmp'
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, DATA_FILE)
+    with DATA_LOCK:
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, DATA_FILE)
 
 
-_anthropic_client = None
-
-
-def get_anthropic_client():
-    # Import "pigro": se l'SDK non è installato, il resto della dashboard
-    # (conti, movimenti, salvataggio su file) deve funzionare lo stesso.
-    global _anthropic_client
-    if _anthropic_client is not None:
-        return _anthropic_client
-    import anthropic
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key and os.path.exists(API_KEY_FILE):
-        with open(API_KEY_FILE, 'r', encoding='utf-8') as f:
-            api_key = f.read().strip() or None
-    # Senza chiave esplicita, l'SDK prova le altre credenziali disponibili
-    # (ANTHROPIC_AUTH_TOKEN, profilo "ant auth login").
-    _anthropic_client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-    return _anthropic_client
-
-
-def ask_claude(prompt):
-    import anthropic
-    client = get_anthropic_client()
-    try:
-        response = client.beta.messages.create(
-            model=ADVISOR_MODEL,
-            max_tokens=ADVISOR_MAX_TOKENS,
-            thinking={'type': 'adaptive'},
-            output_config={'effort': 'medium'},
-            messages=[{'role': 'user', 'content': prompt}],
-            # Se i filtri di sicurezza rifiutano la richiesta, l'API la
-            # ripete lato server su un modello alternativo scelto da Anthropic.
-            betas=['server-side-fallback-2026-07-01'],
-            extra_body={'fallbacks': 'default'},
-        )
-    except anthropic.AuthenticationError:
-        raise AdvisorError('chiave API Anthropic non valida o mancante (vedi istruzioni in server.py).', 401)
-    except anthropic.BadRequestError as e:
-        raise AdvisorError('richiesta rifiutata dal modello (prompt troppo lungo?): ' + e.message, 400)
-    except anthropic.RateLimitError:
-        raise AdvisorError('troppe richieste in poco tempo, riprova tra un minuto.', 429)
-    except anthropic.APIStatusError as e:
-        raise AdvisorError('errore API Anthropic (%d): %s' % (e.status_code, e.message), 502)
-    except anthropic.APIConnectionError:
-        raise AdvisorError('impossibile raggiungere l\'API Anthropic: controlla la connessione internet.', 502)
-
-    if response.stop_reason == 'refusal':
-        raise AdvisorError('il modello ha rifiutato di rispondere a questa domanda.', 422)
-    text = '\n'.join(b.text for b in response.content if b.type == 'text').strip()
-    if response.stop_reason == 'max_tokens':
-        text += '\n\n[risposta troncata: limite di lunghezza raggiunto]'
-    return text
-
-
-class AdvisorError(Exception):
-    def __init__(self, message, status):
-        super().__init__(message)
-        self.status = status
+def request_shutdown(server):
+    # server.shutdown() blocca finché serve_forever() non termina, quindi va
+    # chiamato da un thread diverso da quello che esegue serve_forever().
+    threading.Thread(target=server.shutdown, daemon=True).start()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -171,12 +127,18 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/data':
             self._send_json(read_data_file())
             return
+        if self.path == '/api/ai-info':
+            self._send_json(ai_providers.info())
+            return
         if self.path in ('/', '/index.html'):
             self._send_file(DASHBOARD_FILE, 'text/html; charset=utf-8')
             return
         self.send_error(404, 'Percorso non gestito: ' + self.path)
 
     def do_POST(self):
+        if self.path == '/api/shutdown':
+            self._handle_shutdown()
+            return
         if self.path == '/api/ask':
             self._handle_ask()
             return
@@ -196,6 +158,17 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             self._send_json({'status': 'error', 'message': 'Errore scrivendo dati.json: ' + str(e)}, status=500)
 
+    def _handle_shutdown(self):
+        # Solo richieste JSON: un altro sito aperto nel browser non può inviare
+        # questo Content-Type a localhost senza un preflight CORS (che questo
+        # server non accetta), quindi non può spegnere la dashboard.
+        if not (self.headers.get('Content-Type') or '').startswith('application/json'):
+            self._send_json({'status': 'error', 'message': 'Content-Type non valido.'}, status=415)
+            return
+        self._send_json({'status': 'ok'})
+        print('Richiesta di chiusura dalla dashboard.')
+        request_shutdown(self.server)
+
     def _handle_ask(self):
         try:
             length = int(self.headers.get('Content-Length', '0'))
@@ -207,12 +180,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({'status': 'error', 'message': str(e)}, status=400)
             return
         try:
-            text = ask_claude(prompt)
-        except ImportError:
-            self._send_json({'status': 'error', 'message': 'SDK Anthropic non installato: esegui "pip3 install anthropic" e riavvia server.py.'}, status=500)
-            return
-        except AdvisorError as e:
+            text = ai_providers.ask(prompt)
+        except ai_providers.AdvisorError as e:
             self._send_json({'status': 'error', 'message': str(e)}, status=e.status)
+            return
+        except Exception as e:
+            # Qualunque altro errore imprevisto torna comunque in chat come
+            # messaggio, invece di chiudere la connessione (che nella pagina
+            # sembrerebbe "server.py non raggiungibile").
+            print('Errore imprevisto in /api/ask: %r' % e, file=sys.stderr)
+            self._send_json({'status': 'error', 'message': 'errore imprevisto nel server: %s' % e}, status=500)
             return
         self._send_json({'status': 'ok', 'text': text})
 
@@ -224,29 +201,53 @@ def main():
               'siano insieme.' % BASE_DIR, file=sys.stderr)
         sys.exit(1)
 
-    server = ThreadingHTTPServer(('localhost', PORT), Handler)
     url = 'http://localhost:%d/' % PORT
+    try:
+        server = ThreadingHTTPServer(('localhost', PORT), Handler)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        # Di solito significa che la dashboard è già in esecuzione (un'altra
+        # finestra del terminale ancora aperta): invece di un errore
+        # incomprensibile, si apre semplicemente quella già attiva.
+        print('La porta %d è già in uso: probabilmente la dashboard è già '
+              'avviata in un\'altra finestra del Terminale.' % PORT)
+        print('Apro ' + url + ' — se non si carica, chiudi le altre finestre '
+              'del Terminale che eseguono server.py e riprova.')
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+        return
     print('Dashboard Finanziaria — server locale avviato.')
     print('Apri (o si aprirà da solo tra un attimo): ' + url)
     print('I dati vengono salvati in: ' + DATA_FILE)
-    try:
-        import anthropic  # noqa: F401
-        has_key = bool(os.environ.get('ANTHROPIC_API_KEY')) or os.path.exists(API_KEY_FILE)
-        print('Consulente AI: attivo (modello %s)%s' % (
-            ADVISOR_MODEL, '' if has_key else ' — ATTENZIONE: nessuna chiave in '
-            'ANTHROPIC_API_KEY né in anthropic-api-key.txt'))
-    except ImportError:
-        print('Consulente AI: NON attivo — esegui "pip3 install anthropic" e riavvia.')
+    ai = ai_providers.info()
+    if ai['ready']:
+        print('Consulente AI: attivo (%s, modello %s)' % (ai['label'], ai['model']))
+    else:
+        print('Consulente AI: NON attivo — ' + ai['problem'])
     print('Per fermare il server: chiudi questa finestra, oppure Ctrl+C.')
     try:
         webbrowser.open(url)
     except Exception:
         pass  # se non riesce ad aprire il browser da solo, l'utente lo apre a mano
 
+    # Chiusura della finestra del Terminale (SIGHUP) o "kill" (SIGTERM):
+    # stessa chiusura ordinata del pulsante nella dashboard.
+    def on_signal(signum, frame):
+        request_shutdown(server)
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGHUP, on_signal)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print('\nServer fermato.')
+        pass
+    # Attende che un eventuale salvataggio di dati.json in corso sia finito.
+    with DATA_LOCK:
+        server.server_close()
+    print('\nServer fermato. I dati sono in: ' + DATA_FILE)
 
 
 if __name__ == '__main__':

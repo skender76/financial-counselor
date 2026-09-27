@@ -4,19 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Personal finance dashboard ("Dashboard Finanziaria") for a single user. UI text, code comments and log messages are all in **Italian**; keep new ones in Italian too. There is no build step, no package manager and no test suite. Git-tracked; `dati.json` (real financial data) and `anthropic-api-key.txt` are gitignored and must never be committed.
+Personal finance dashboard ("Dashboard Finanziaria") for a single user. UI text, code comments and log messages are all in **Italian**; keep new ones in Italian too. There is no build step, no package manager and no test suite. Git-tracked; `dati.json` (real financial data) and `ai-config.json` (API keys) are gitignored and must never be committed.
 
 ## Files
 
-- `financial-dashboard.html` — the whole dashboard (HTML + CSS + JS in one file), served by `server.py`. The AI chat goes through `askAdvisor()`, which POSTs to `server.py`'s `/api/ask`; opening the HTML file directly (not via `localhost:8765`) leaves the chat and file sync without a backend. The `#fileSyncStatus` header indicator shows whether writes are reaching `dati.json`.
-- `server.py` — Python 3 server on `localhost:8765`: serves the dashboard at `/` and exposes `GET/POST /api/data` backed by `dati.json` (atomic write via `.tmp` + `os.replace`), and `POST /api/ask` (`{prompt}` → `{text}`) which calls Claude via the `anthropic` SDK. Everything else is stdlib; the SDK is imported lazily so the server still runs without it. API key from `ANTHROPIC_API_KEY` or `anthropic-api-key.txt` next to the script (the double-click launcher doesn't inherit shell env vars). Everything is sent with `Cache-Control: no-store` on purpose (stale caching caused problems before).
-- `avvia-dashboard.command` — double-clickable macOS launcher that runs `server.py`.
+- `financial-dashboard.html` — the whole dashboard (HTML + CSS + JS in one file), served by `server.py`. The AI chat goes through `askAdvisor()`, which POSTs to `server.py`'s `/api/ask`; `loadAdvisorInfo()` reads `/api/ai-info` at startup to show the active vendor/model under the chat; opening the HTML file directly (not via `localhost:8765`) leaves the chat and file sync without a backend. The `#fileSyncStatus` header indicator shows whether writes are reaching `dati.json`.
+- `server.py` — Python 3 server on `localhost:8765`: serves the dashboard at `/` and exposes `GET/POST /api/data` backed by `dati.json` (atomic write via `.tmp` + `os.replace`), and delegates the AI endpoints (`POST /api/ask` `{prompt}` → `{text}`, `GET /api/ai-info`) to `ai_providers.py`. Otherwise stdlib only. Everything is sent with `Cache-Control: no-store` on purpose (stale caching caused problems before). Graceful stop: `POST /api/shutdown` (JSON only — blocks cross-site requests; used by the header's "⏻ Chiudi dashboard" button, which first awaits a final `syncToServerFile()`), Ctrl+C, SIGTERM or SIGHUP (Terminal window closed) all end `serve_forever()`, then wait on `DATA_LOCK` so an in-progress `dati.json` write finishes. `server.shutdown()` must run off the serving thread (`request_shutdown()`). If port 8765 is already taken, `main()` opens the running instance instead of crashing.
+- `ai_providers.py` — vendor-neutral AI layer. `ask(prompt)` reads `ai-config.json` on every call (so switching vendor/key needs no restart), picks the `Provider` subclass named by `"provider"` (`anthropic`, `openai`, `gemini`), and falls back to the vendor's env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) when `api_key` is empty. Each provider lazy-imports its official SDK, so only the chosen vendor's SDK needs installing. Adapters must translate every vendor error into `AdvisorError(message_in_italian, http_status)` — the page shows that message in the chat. To add a vendor: subclass `Provider`, implement `import_sdk`/`make_client`/`ask`, register it in `PROVIDERS`. `ai-config.example.json` is the committed template.
+- `avvia-dashboard.command` — double-clickable macOS launcher; runs `server.py` with `.venv/bin/python` when `.venv` exists (it doesn't inherit shell env vars, so keys belong in `ai-config.json`).
 
 ## Running
 
 ```bash
-python3 server.py          # serves the dashboard, opens browser, writes ./dati.json
-pip3 install anthropic     # only needed for the AI advisor chat
+python3 -m venv .venv && .venv/bin/python -m pip install anthropic   # once; for the AI chat install the chosen vendor's SDK (anthropic | openai | google-genai) — Homebrew Python blocks global pip
+cp ai-config.example.json ai-config.json   # then fill in provider, api_key, model
+.venv/bin/python server.py   # serves the dashboard, opens browser, writes ./dati.json (avvia-dashboard.command does this)
 ```
 
 ## Architecture (single-file vanilla JS + Chart.js from CDN)
