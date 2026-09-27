@@ -2,6 +2,7 @@
 dati.json
 dati.json.tmp
 ai-config.json
+ai-config.json.tmp
 
 __pycache__/
 .venv/

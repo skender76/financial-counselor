@@ -1,24 +1,26 @@
 """
-Fornitori AI per il consulente della Dashboard Finanziaria.
+Fornitori AI e chiavi API per il consulente della Dashboard Finanziaria.
 
-Il server chiama solo ask(prompt): quale fornitore usare, con che chiave e con
-quale modello si decide in ai-config.json (stessa cartella di questo file,
-escluso da git perché contiene le chiavi). Esempio completo in
-ai-config.example.json:
+Le chiavi si gestiscono dalla dashboard (sezione "🔑 Chiavi API": aggiungi,
+modifica, elimina, scegli quella in uso) e sono salvate in ai-config.json,
+nella stessa cartella di questo file: escluso da git, permessi 600, separato
+da dati.json così le chiavi non finiscono mai in export o backup. Formato:
 
     {
-      "provider": "anthropic",
-      "providers": {
-        "anthropic": {"api_key": "sk-ant-...", "model": "claude-opus-5"},
-        "openai":    {"api_key": "sk-...",     "model": "..."},
-        "gemini":    {"api_key": "...",        "model": "..."}
-      }
+      "active_key_id": "k_1a2b3c4d5e6f",
+      "keys": [
+        {"id": "k_1a2b3c4d5e6f", "name": "Anthropic personale",
+         "provider": "anthropic", "value": "sk-ant-...", "model": "",
+         "expires": "2027-01-31", "notes": "...", "created": "..."}
+      ]
     }
 
-Per cambiare fornitore basta cambiare "provider": la configurazione viene
-riletta a ogni domanda, quindi non serve riavviare il server. Se "api_key" è
-vuota si usa la variabile d'ambiente del fornitore (ANTHROPIC_API_KEY,
-OPENAI_API_KEY, GEMINI_API_KEY).
+Il consulente usa solo la chiave attiva (active_key_id): se è scaduta, la
+richiesta viene rifiutata con un messaggio chiaro. "model" vuoto = modello
+predefinito del fornitore (solo Anthropic ne ha uno; per OpenAI e Gemini è
+obbligatorio). Il file viene riletto a ogni richiesta: nessun riavvio.
+Il valore di una chiave non viene MAI restituito alla pagina, solo le
+ultime 4 cifre.
 
 Ogni fornitore usa il proprio SDK ufficiale, importato solo quando serve:
 basta installare quello del fornitore scelto nell'ambiente virtuale .venv
@@ -29,12 +31,17 @@ in PROVIDERS. ask() deve restituire il testo della risposta, oppure sollevare
 AdvisorError con un messaggio in italiano da mostrare in chat.
 """
 
+import datetime
 import json
 import os
+import secrets
+import threading
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, 'ai-config.json')
-DEFAULT_PROVIDER = 'anthropic'
+EXPIRY_WARNING_DAYS = 14
+# Serializza lettura-modifica-scrittura di ai-config.json (il server è multi-thread).
+CONFIG_LOCK = threading.RLock()
 TRUNCATED_NOTE = '\n\n[risposta troncata: limite di lunghezza raggiunto]'
 
 
@@ -50,7 +57,6 @@ class Provider:
     name = ''           # chiave in ai-config.json
     label = ''          # nome leggibile, mostrato nella dashboard
     package = ''        # pacchetto pip dell'SDK ufficiale
-    env_var = ''        # variabile d'ambiente di ripiego per la chiave
     default_model = ''  # vuoto = il modello va indicato in ai-config.json
 
     def __init__(self):
@@ -85,7 +91,6 @@ class AnthropicProvider(Provider):
     name = 'anthropic'
     label = 'Anthropic Claude'
     package = 'anthropic'
-    env_var = 'ANTHROPIC_API_KEY'
     default_model = 'claude-opus-5'
     max_tokens = 16000
 
@@ -133,7 +138,6 @@ class OpenAIProvider(Provider):
     name = 'openai'
     label = 'OpenAI'
     package = 'openai'
-    env_var = 'OPENAI_API_KEY'
 
     def import_sdk(self):
         import openai
@@ -170,7 +174,6 @@ class GeminiProvider(Provider):
     name = 'gemini'
     label = 'Google Gemini'
     package = 'google-genai'
-    env_var = 'GEMINI_API_KEY'
 
     def import_sdk(self):
         from google import genai
@@ -217,61 +220,209 @@ class GeminiProvider(Provider):
 PROVIDERS = {p.name: p for p in (AnthropicProvider(), OpenAIProvider(), GeminiProvider())}
 
 
+# ===== ai-config.json: elenco delle chiavi API =====
+
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        return {}
+        return {'active_key_id': None, 'keys': []}
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         raise AdvisorError('ai-config.json non è leggibile (%s): controlla la sintassi JSON.' % e, 500)
-    if not isinstance(config, dict):
-        raise AdvisorError('ai-config.json deve contenere un oggetto JSON.', 500)
+    if not isinstance(config, dict) or not isinstance(config.get('keys', []), list):
+        raise AdvisorError('ai-config.json non ha il formato atteso (vedi ai-config.example.json).', 500)
+    config.setdefault('keys', [])
+    config.setdefault('active_key_id', None)
     return config
 
 
+def save_config(config):
+    # Scrittura atomica (file temporaneo + rename), leggibile solo dall'utente.
+    tmp_path = CONFIG_FILE + '.tmp'
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, CONFIG_FILE)
+
+
+def _expiry_date(key):
+    try:
+        return datetime.date.fromisoformat(key.get('expires') or '')
+    except ValueError:
+        return None
+
+
+def _is_expired(key):
+    # Una chiave che scade oggi vale ancora per tutto il giorno.
+    expiry = _expiry_date(key)
+    return expiry is not None and expiry < datetime.date.today()
+
+
+def _mask(value):
+    return '••••' + value[-4:] if len(value) >= 8 else '••••'
+
+
+def _public_key(key, active_id):
+    """Dati di una chiave per la pagina: tutto tranne il valore."""
+    provider = PROVIDERS.get(key.get('provider'))
+    expiry = _expiry_date(key)
+    days_left = (expiry - datetime.date.today()).days if expiry else None
+    return {
+        'id': key['id'],
+        'name': key.get('name', ''),
+        'provider': key.get('provider'),
+        'provider_label': provider.label if provider else key.get('provider'),
+        'model': key.get('model', ''),
+        'effective_model': key.get('model') or (provider.default_model if provider else ''),
+        'expires': key.get('expires', ''),
+        'notes': key.get('notes', ''),
+        'created': key.get('created', ''),
+        'masked': _mask(key.get('value', '')),
+        'active': key['id'] == active_id,
+        'expired': _is_expired(key),
+        'expires_soon': days_left is not None and 0 <= days_left <= EXPIRY_WARNING_DAYS,
+    }
+
+
+def list_keys():
+    with CONFIG_LOCK:
+        config = load_config()
+    active_id = config.get('active_key_id')
+    return {
+        'keys': [_public_key(k, active_id) for k in config['keys']],
+        'active_key_id': active_id,
+        'providers': [{'name': p.name, 'label': p.label, 'default_model': p.default_model,
+                       'package': p.package, 'sdk_installed': p.sdk_installed()}
+                      for p in PROVIDERS.values()],
+    }
+
+
+def _clean_fields(fields, existing=None):
+    """Valida i campi inviati dalla pagina; existing = chiave che si modifica."""
+    def text(name, max_len):
+        value = fields.get(name, '')
+        if not isinstance(value, str):
+            raise AdvisorError('campo "%s" non valido.' % name, 400)
+        value = value.strip()
+        if len(value) > max_len:
+            raise AdvisorError('campo "%s" troppo lungo (max %d caratteri).' % (name, max_len), 400)
+        return value
+
+    name = text('name', 100)
+    if not name:
+        raise AdvisorError('il nome della chiave è obbligatorio.', 400)
+    provider = text('provider', 40)
+    if provider not in PROVIDERS:
+        raise AdvisorError('fornitore "%s" non supportato.' % provider, 400)
+    value = text('value', 500)
+    if not value and existing is None:
+        raise AdvisorError('il valore della chiave API è obbligatorio.', 400)
+    if any(c.isspace() for c in value):
+        raise AdvisorError('il valore della chiave API non può contenere spazi.', 400)
+    model = text('model', 100)
+    if not model and not PROVIDERS[provider].default_model:
+        raise AdvisorError('per %s il modello è obbligatorio (prendi il nome dalla '
+                           'documentazione del fornitore).' % PROVIDERS[provider].label, 400)
+    expires = text('expires', 10)
+    if expires:
+        try:
+            datetime.date.fromisoformat(expires)
+        except ValueError:
+            raise AdvisorError('data di scadenza non valida (formato AAAA-MM-GG).', 400)
+    notes = text('notes', 2000)
+
+    cleaned = {'name': name, 'provider': provider, 'model': model, 'expires': expires, 'notes': notes}
+    # In modifica, valore vuoto = mantieni quello già salvato.
+    cleaned['value'] = value or existing['value']
+    return cleaned
+
+
+def _find(config, key_id):
+    for key in config['keys']:
+        if key['id'] == key_id:
+            return key
+    raise AdvisorError('chiave non trovata (forse è già stata eliminata).', 404)
+
+
+def manage_keys(request):
+    """Azioni della sezione "Chiavi API": add, update, delete, activate."""
+    action = request.get('action')
+    with CONFIG_LOCK:
+        config = load_config()
+        if action == 'add':
+            key = _clean_fields(request)
+            key['id'] = 'k_' + secrets.token_hex(6)
+            key['created'] = datetime.datetime.now().isoformat(timespec='seconds')
+            config['keys'].append(key)
+            # La prima chiave aggiunta diventa subito quella in uso.
+            if not config.get('active_key_id'):
+                config['active_key_id'] = key['id']
+        elif action == 'update':
+            key = _find(config, request.get('id'))
+            key.update(_clean_fields(request, existing=key))
+        elif action == 'delete':
+            key = _find(config, request.get('id'))
+            config['keys'].remove(key)
+            if config.get('active_key_id') == key['id']:
+                config['active_key_id'] = None
+        elif action == 'activate':
+            key = _find(config, request.get('id'))
+            config['active_key_id'] = key['id']
+        else:
+            raise AdvisorError('azione non valida.', 400)
+        save_config(config)
+    return list_keys()
+
+
+# ===== Consulente: usa la chiave attiva =====
+
 def resolve():
-    """Restituisce (provider, api_key, model) secondo ai-config.json."""
-    config = load_config()
-    name = config.get('provider') or DEFAULT_PROVIDER
-    provider = PROVIDERS.get(name)
+    """Restituisce (provider, chiave attiva o None, modello)."""
+    with CONFIG_LOCK:
+        config = load_config()
+    active_id = config.get('active_key_id')
+    key = next((k for k in config['keys'] if k['id'] == active_id), None)
+    if key is None:
+        return None, None, None
+    provider = PROVIDERS.get(key.get('provider'))
     if provider is None:
-        raise AdvisorError('fornitore AI "%s" non supportato in ai-config.json (disponibili: %s).'
-                           % (name, ', '.join(PROVIDERS)), 500)
-    settings = (config.get('providers') or {}).get(name) or {}
-    api_key = (settings.get('api_key') or '').strip() or os.environ.get(provider.env_var) or None
-    model = (settings.get('model') or '').strip() or provider.default_model
-    return provider, api_key, model
+        raise AdvisorError('la chiave "%s" indica un fornitore non supportato (%s).'
+                           % (key.get('name'), key.get('provider')), 500)
+    return provider, key, key.get('model') or provider.default_model
 
 
-def check_ready(provider, api_key, model):
+def check_ready(provider, key, model):
     """Messaggio che spiega cosa manca, oppure None se è tutto pronto."""
+    if key is None:
+        return 'nessuna chiave API in uso: aggiungila (o scegli quella da usare) nella sezione "🔑 Chiavi API".'
+    if _is_expired(key):
+        return ('la chiave "%s" è scaduta il %s: aggiornala o scegline un\'altra nella sezione "🔑 Chiavi API".'
+                % (key.get('name'), key.get('expires')))
     if not provider.sdk_installed():
         return ('SDK di %s non installato: esegui ".venv/bin/python -m pip install %s" e riavvia il server.'
                 % (provider.label, provider.package))
-    if not api_key:
-        return ('nessuna chiave API per %s: inseriscila in ai-config.json (providers.%s.api_key) '
-                'oppure nella variabile d\'ambiente %s.' % (provider.label, provider.name, provider.env_var))
     if not model:
-        return 'nessun modello indicato per %s: impostalo in ai-config.json (providers.%s.model).' % (
-            provider.label, provider.name)
+        return 'nessun modello indicato per la chiave "%s": impostalo nella sezione "🔑 Chiavi API".' % key.get('name')
     return None
 
 
 def ask(prompt):
-    provider, api_key, model = resolve()
-    problem = check_ready(provider, api_key, model)
+    provider, key, model = resolve()
+    problem = check_ready(provider, key, model)
     if problem:
         raise AdvisorError(problem, 503)
-    return provider.ask(api_key, model, prompt)
+    return provider.ask(key['value'], model, prompt)
 
 
 def info():
     """Stato del consulente, per la dashboard e per il messaggio di avvio."""
     try:
-        provider, api_key, model = resolve()
+        provider, key, model = resolve()
     except AdvisorError as e:
-        return {'provider': None, 'label': None, 'model': None, 'ready': False, 'problem': str(e)}
-    problem = check_ready(provider, api_key, model)
-    return {'provider': provider.name, 'label': provider.label, 'model': model,
+        return {'label': None, 'model': None, 'key_name': None, 'ready': False, 'problem': str(e)}
+    problem = check_ready(provider, key, model)
+    return {'label': provider.label if provider else None, 'model': model,
+            'key_name': key.get('name') if key else None,
             'ready': problem is None, 'problem': problem}

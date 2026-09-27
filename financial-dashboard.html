@@ -341,6 +341,11 @@
     }
     .btn-icon-sm:hover { color: var(--blue); }
     .btn-icon-sm.danger:hover { color: var(--red); }
+    .key-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
+    .key-badge.active { background: var(--tag-pen-bg); color: var(--tag-pen-text); }
+    .key-badge.expired { background: var(--danger-bg); color: var(--red); }
+    .key-badge.soon { background: var(--amber-bg); color: var(--amber-text); }
+    .key-notes { font-size: 11px; color: var(--text-secondary); margin-top: 2px; white-space: pre-wrap; }
     .btn-icon-header {
       background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
       width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
@@ -504,6 +509,20 @@
         <button class="btn-save" onclick="saveMemoryEdit()">Salva</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Chiavi API del consulente AI (salvate in ai-config.json, non in dati.json) -->
+<div class="card chat-card">
+  <div class="chat-header" style="cursor:pointer;" onclick="toggleApiKeysCollapse()">
+    <div class="section-title">🔑 Chiavi API <span id="apiKeysCollapseChevron" style="font-size:10px;color:var(--text-muted);">▾</span></div>
+    <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+      <button class="btn-icon-header" onclick="openApiKeyModal()" title="Aggiungi chiave API">+</button>
+    </div>
+  </div>
+  <div id="apiKeysBodyWrap">
+    <div id="apiKeysList"></div>
+    <div class="chat-attach-note" style="margin-top:8px;">Il consulente usa solo la chiave "in uso". Le chiavi sono salvate in ai-config.json sul tuo computer (escluso da git e separato da dati.json, quindi mai negli export o nei backup); il valore non viene mai rimostrato, solo le ultime 4 cifre.</div>
   </div>
 </div>
 
@@ -944,6 +963,47 @@
   <div class="note" id="pensionNote"></div>
 </div>
 
+<!-- Add/Edit API Key Modal -->
+<div class="modal-overlay" id="apiKeyModalOverlay">
+  <div class="modal">
+    <h2 id="apiKeyModalTitle">🔑 Nuova chiave API</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Nome</label>
+        <input type="text" class="field-input" id="apikey-name" style="width:220px;" maxlength="100" placeholder="es. Anthropic personale">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Chiave API</label>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input type="password" class="field-input" id="apikey-value" style="width:190px;" autocomplete="off" spellcheck="false" oninput="onApiKeyValueInput()">
+          <button class="btn-icon-sm" type="button" onclick="toggleApiKeyVisibility()" id="apikey-visibility-btn" title="Mostra/nascondi">👁️</button>
+        </div>
+      </div>
+      <div class="chat-attach-note" id="apikey-value-hint" style="margin:-4px 0 8px;"></div>
+      <div class="field-row">
+        <label class="field-label">Fornitore</label>
+        <select class="field-input" id="apikey-provider" style="width:220px;" onchange="onApiKeyProviderChange()"></select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Modello</label>
+        <input type="text" class="field-input" id="apikey-model" style="width:220px;" maxlength="100" spellcheck="false">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Scadenza (opz.)</label>
+        <input type="date" class="field-input" id="apikey-expires" style="width:220px;">
+      </div>
+      <div class="field-row" style="align-items:flex-start;">
+        <label class="field-label">Note (opz.)</label>
+        <textarea class="field-input" id="apikey-notes" style="width:220px;min-height:60px;resize:vertical;" maxlength="2000"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeApiKeyModal()">Annulla</button>
+      <button class="btn-save" id="apikey-save-btn" onclick="saveApiKey()">Salva</button>
+    </div>
+  </div>
+</div>
+
 <!-- Edit Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -1298,7 +1358,7 @@
   // Snapshot di contesto mercato/fiscale — raccolto via ricerca web il 04/08/2026.
   // NON è un feed live: per aggiornarlo bisogna rifare la ricerca e modificare
   // questo blocco a mano. Nessun connettore di mercato/fiscale è collegato,
-  // quindi il chatbot (fornitore AI scelto in ai-config.json) non ha accesso a
+  // quindi il chatbot (fornitore della chiave API in uso) non ha accesso a
   // internet in tempo reale: questo blocco è l'unico contesto "esterno" che riceve.
   const CONTEXT_AS_OF = '2026-08-04';
   const MARKET_CONTEXT = [
@@ -3565,14 +3625,14 @@
 
   // Fornitore/modello attivi, letti da /api/ai-info all'avvio (vedi
   // loadAdvisorInfo): mostrati nella nota sotto la chat.
-  let advisorModelLabel = 'fornitore AI configurato in server.py';
+  let advisorModelLabel = 'chiave API in uso (sezione "🔑 Chiavi API")';
 
   async function loadAdvisorInfo() {
     try {
       const res = await fetch('/api/ai-info');
       const info = await res.json();
       advisorModelLabel = info.ready
-        ? info.label + ' (' + info.model + ')'
+        ? info.label + ' (' + info.model + ', chiave "' + info.key_name + '")'
         : 'non attivo — ' + info.problem;
     } catch {
       advisorModelLabel = 'non disponibile (server.py non raggiungibile)';
@@ -3783,8 +3843,225 @@
     ].join('\n');
   }
 
+  // ===== Chiavi API (sezione "🔑 Chiavi API") =====
+  // Le chiavi NON stanno in dati.json né nello store: server.py le salva in
+  // ai-config.json (/api/ai-keys) e restituisce solo nome, fornitore, modello,
+  // scadenza, note e le ultime 4 cifre. Il valore completo esce dalla pagina
+  // solo quando lo si digita nel modal, e non vi rientra mai.
+  const AI_KEYS_API = '/api/ai-keys';
+  const API_KEYS_COLLAPSE_KEY = 'skender_fin_api_keys_collapsed_v1';
+  let apiKeysState = { keys: [], providers: [] };
+  let editingApiKeyId = null;
+  let apiKeyProviderTouched = false;
+
+  async function apiKeysRequest(body) {
+    let res;
+    try {
+      res = await fetch(AI_KEYS_API, body ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      } : undefined);
+    } catch {
+      throw new Error('server.py non raggiungibile.');
+    }
+    let data = null;
+    try { data = await res.json(); } catch { /* risposta non JSON */ }
+    if (!res.ok || !data || data.status === 'error') {
+      throw new Error((data && data.message) || ('HTTP ' + res.status));
+    }
+    return data;
+  }
+
+  async function loadApiKeys() {
+    try {
+      apiKeysState = await apiKeysRequest();
+    } catch (err) {
+      document.getElementById('apiKeysList').innerHTML =
+        '<div class="expense-empty">Impossibile leggere le chiavi API: ' + escapeHtml(err.message) + '</div>';
+      return;
+    }
+    renderApiKeys();
+  }
+
+  function formatDateIt(iso) {
+    const p = (iso || '').split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+  }
+
+  function renderApiKeys() {
+    const wrap = document.getElementById('apiKeysList');
+    if (!apiKeysState.keys.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessuna chiave API salvata. Usa "+" per aggiungerne una: senza chiave il consulente AI non può rispondere.</div>';
+      return;
+    }
+    wrap.innerHTML = apiKeysState.keys.map(k => {
+      const badges =
+        (k.active ? '<span class="key-badge active">in uso</span>' : '') +
+        (k.expired ? '<span class="key-badge expired">scaduta</span>'
+          : (k.expires_soon ? '<span class="key-badge soon">scade presto</span>' : ''));
+      const sub = [
+        k.provider_label,
+        'modello: ' + (k.effective_model || '—') + (k.model ? '' : ' (predefinito)'),
+        k.masked,
+        k.expires ? 'scade il ' + formatDateIt(k.expires) : 'nessuna scadenza',
+      ].join(' · ');
+      return '<div class="line-item">' +
+        '<div style="min-width:0;">' +
+          '<div class="line-label">' + escapeHtml(k.name) + badges + '</div>' +
+          '<div class="line-sublabel">' + escapeHtml(sub) + '</div>' +
+          (k.notes ? '<div class="key-notes">' + escapeHtml(k.notes) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">' +
+          (k.active ? '' : '<button class="btn-edit" onclick="activateApiKey(\'' + k.id + '\')" title="Il consulente AI userà questa chiave">Usa questa</button>') +
+          '<div class="investment-row-actions">' +
+            '<button class="btn-icon-sm" onclick="openApiKeyModal(\'' + k.id + '\')" title="Modifica">✏️</button>' +
+            '<button class="btn-icon-sm danger" onclick="confirmDeleteApiKey(\'' + k.id + '\')" title="Elimina">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // Riconosce il fornitore dal prefisso della chiave (solo per precompilare
+  // il menu: resta modificabile). sk-ant- va controllato prima di sk-.
+  function detectApiKeyProvider(value) {
+    if (value.startsWith('sk-ant-')) return 'anthropic';
+    if (value.startsWith('AIza')) return 'gemini';
+    if (value.startsWith('sk-')) return 'openai';
+    return null;
+  }
+
+  function updateApiKeyModelPlaceholder() {
+    const provider = apiKeysState.providers.find(p => p.name === document.getElementById('apikey-provider').value);
+    const model = document.getElementById('apikey-model');
+    model.placeholder = provider && provider.default_model
+      ? 'vuoto = ' + provider.default_model
+      : 'obbligatorio (vedi documentazione del fornitore)';
+  }
+
+  function onApiKeyValueInput() {
+    const detected = detectApiKeyProvider(document.getElementById('apikey-value').value.trim());
+    if (detected && !apiKeyProviderTouched) {
+      document.getElementById('apikey-provider').value = detected;
+      updateApiKeyModelPlaceholder();
+    }
+  }
+
+  function onApiKeyProviderChange() {
+    apiKeyProviderTouched = true;
+    updateApiKeyModelPlaceholder();
+  }
+
+  function toggleApiKeyVisibility() {
+    const input = document.getElementById('apikey-value');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+
+  function openApiKeyModal(id) {
+    editingApiKeyId = id || null;
+    const key = id ? apiKeysState.keys.find(k => k.id === id) : null;
+    if (id && !key) return;
+    const providerSelect = document.getElementById('apikey-provider');
+    providerSelect.innerHTML = apiKeysState.providers.map(p =>
+      '<option value="' + p.name + '">' + escapeHtml(p.label) + (p.sdk_installed ? '' : ' (SDK da installare)') + '</option>'
+    ).join('');
+    document.getElementById('apiKeyModalTitle').textContent = key ? '✏️ Modifica chiave API' : '🔑 Nuova chiave API';
+    document.getElementById('apikey-name').value = key ? key.name : '';
+    const valueInput = document.getElementById('apikey-value');
+    valueInput.value = '';
+    valueInput.type = 'password';
+    valueInput.placeholder = key ? 'vuoto = non cambiarla' : 'incolla qui la chiave';
+    document.getElementById('apikey-value-hint').textContent = key
+      ? 'Chiave attuale: ' + key.masked + '. Incollane una nuova solo per sostituirla.'
+      : '';
+    providerSelect.value = key ? key.provider : 'anthropic';
+    apiKeyProviderTouched = !!key; // in modifica il fornitore scelto non cambia da solo
+    document.getElementById('apikey-model').value = key ? key.model : '';
+    document.getElementById('apikey-expires').value = key ? key.expires : '';
+    document.getElementById('apikey-notes').value = key ? key.notes : '';
+    updateApiKeyModelPlaceholder();
+    document.getElementById('apiKeyModalOverlay').classList.add('open');
+    document.getElementById('apikey-name').focus();
+  }
+
+  function closeApiKeyModal() {
+    document.getElementById('apiKeyModalOverlay').classList.remove('open');
+    // Il valore digitato non resta nel DOM dopo la chiusura.
+    document.getElementById('apikey-value').value = '';
+    editingApiKeyId = null;
+  }
+
+  async function saveApiKey() {
+    const body = {
+      action: editingApiKeyId ? 'update' : 'add',
+      id: editingApiKeyId,
+      name: document.getElementById('apikey-name').value,
+      value: document.getElementById('apikey-value').value,
+      provider: document.getElementById('apikey-provider').value,
+      model: document.getElementById('apikey-model').value,
+      expires: document.getElementById('apikey-expires').value,
+      notes: document.getElementById('apikey-notes').value,
+    };
+    const btn = document.getElementById('apikey-save-btn');
+    btn.disabled = true;
+    try {
+      apiKeysState = await apiKeysRequest(body);
+    } catch (err) {
+      alert('Chiave non salvata: ' + err.message);
+      return;
+    } finally {
+      btn.disabled = false;
+    }
+    closeApiKeyModal();
+    renderApiKeys();
+    loadAdvisorInfo();
+  }
+
+  async function activateApiKey(id) {
+    try {
+      apiKeysState = await apiKeysRequest({ action: 'activate', id: id });
+    } catch (err) {
+      alert('Impossibile usare questa chiave: ' + err.message);
+      return;
+    }
+    renderApiKeys();
+    loadAdvisorInfo();
+  }
+
+  async function confirmDeleteApiKey(id) {
+    const key = apiKeysState.keys.find(k => k.id === id);
+    if (!key) return;
+    const warning = key.active ? '\n\nÈ la chiave in uso: finché non ne scegli un\'altra il consulente AI non potrà rispondere.' : '';
+    if (!confirm('Eliminare la chiave "' + key.name + '" (' + key.provider_label + ', ' + key.masked + ')? L\'operazione non è reversibile.' + warning)) return;
+    try {
+      apiKeysState = await apiKeysRequest({ action: 'delete', id: id });
+    } catch (err) {
+      alert('Chiave non eliminata: ' + err.message);
+      return;
+    }
+    renderApiKeys();
+    loadAdvisorInfo();
+  }
+
+  function loadApiKeysCollapsed() {
+    const saved = store.getItem(API_KEYS_COLLAPSE_KEY);
+    return saved === 'true'; // default: aperta
+  }
+
+  function applyApiKeysCollapse(collapsed) {
+    document.getElementById('apiKeysBodyWrap').style.display = collapsed ? 'none' : 'block';
+    document.getElementById('apiKeysCollapseChevron').textContent = collapsed ? '▸' : '▾';
+  }
+
+  function toggleApiKeysCollapse() {
+    const collapsed = !loadApiKeysCollapsed();
+    store.setItem(API_KEYS_COLLAPSE_KEY, String(collapsed));
+    applyApiKeysCollapse(collapsed);
+  }
+
   // Il consulente AI passa da server.py, che inoltra il prompt al fornitore AI
-  // scelto in ai-config.json (Anthropic, OpenAI, Gemini — endpoint /api/ask).
+  // della chiave in uso (Anthropic, OpenAI, Gemini — endpoint /api/ask).
   // I prompt includono già snapshot finanziario e memoria, quindi basta
   // inviare il testo del prompt.
   const ASK_API = '/api/ask';
@@ -4092,6 +4369,8 @@
   applyMemoryCollapse(loadMemoryCollapsed());
   applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
   updateSyncIndicator();
+  applyApiKeysCollapse(loadApiKeysCollapsed());
+  loadApiKeys();
   loadAdvisorInfo();
 </script>
 </body>

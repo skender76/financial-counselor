@@ -11,13 +11,16 @@ Cosa fa:
                        l'header If-Match indica la versione attuale del file
                        (altrimenti 409: dati cambiati da un'altra scheda)
 - Espone il consulente AI:
-    POST /api/ask     -> inoltra il prompt al fornitore AI configurato
-    GET  /api/ai-info -> fornitore/modello attivi e cosa eventualmente manca
+    POST /api/ask     -> inoltra il prompt con la chiave API in uso
+    GET  /api/ai-info -> fornitore/modello/chiave in uso e cosa eventualmente manca
+    GET  /api/ai-keys -> elenco delle chiavi API (mai il valore, solo le
+                         ultime 4 cifre)
+    POST /api/ai-keys -> {"action": "add" | "update" | "delete" | "activate", ...}
+  Le chiavi (Anthropic, OpenAI, Gemini) si gestiscono dalla dashboard e sono
+  salvate in ai-config.json: vedi ai_providers.py.
 - Chiusura ordinata (attende la fine di un eventuale salvataggio di dati.json):
     POST /api/shutdown (pulsante "Chiudi dashboard"), Ctrl+C, oppure la
     chiusura della finestra del Terminale.
-  Fornitori (Anthropic, OpenAI, Gemini), chiavi API e modelli si scelgono in
-  ai-config.json: vedi ai_providers.py e ai-config.example.json.
 - Per conti/movimenti/salvataggio basta la libreria standard di Python 3.
   Solo il consulente AI richiede in più l'SDK del fornitore scelto, installato
   nell'ambiente virtuale del progetto (Python di Homebrew non permette pip
@@ -184,6 +187,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/ai-info':
             self._send_json(ai_providers.info())
             return
+        if self.path == '/api/ai-keys':
+            try:
+                self._send_json(ai_providers.list_keys())
+            except ai_providers.AdvisorError as e:
+                self._send_json({'status': 'error', 'message': str(e)}, status=e.status)
+            return
         if self.path in ('/', '/index.html'):
             self._send_file(DASHBOARD_FILE, 'text/html; charset=utf-8')
             return
@@ -197,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == '/api/ask':
             self._handle_ask()
+            return
+        if self.path == '/api/ai-keys':
+            self._handle_ai_keys()
             return
         if self.path != '/api/data':
             self.send_error(404, 'Percorso non gestito: ' + self.path)
@@ -226,6 +238,25 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({'status': 'ok'})
         print('Richiesta di chiusura dalla dashboard.')
         request_shutdown(self.server)
+
+    def _handle_ai_keys(self):
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length > 0 else {}
+            if not isinstance(body, dict):
+                raise ValueError('Il corpo della richiesta deve essere un oggetto JSON.')
+            result = ai_providers.manage_keys(body)
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send_json({'status': 'error', 'message': str(e)}, status=400)
+            return
+        except ai_providers.AdvisorError as e:
+            self._send_json({'status': 'error', 'message': str(e)}, status=e.status)
+            return
+        except OSError as e:
+            self._send_json({'status': 'error', 'message': 'Errore scrivendo ai-config.json: %s' % e}, status=500)
+            return
+        result['status'] = 'ok'
+        self._send_json(result)
 
     def _handle_ask(self):
         try:
