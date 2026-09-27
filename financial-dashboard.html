@@ -981,75 +981,182 @@
 </div>
 
 <script>
-  // ===== Persistenza su file locale =====
-  // Un piccolo server Python (server.py), avviato separatamente su questo
-  // stesso computer, legge/scrive un vero file (dati.json) sul disco. Qui
-  // idratiamo il localStorage con l'ultimo stato salvato su file PRIMA che il
-  // resto della dashboard (poco più sotto) legga il localStorage per
-  // inizializzare conti/movimenti/investimenti/ecc. — quindi la chiamata deve
-  // essere sincrona e deve girare per prima, letteralmente come prima riga di
-  // tutto lo script. Se il server non è raggiungibile (non avviato), la
-  // dashboard funziona comunque sul localStorage del browser, ma NON sta
-  // scrivendo su file: l'indicatore "💾 Salvataggio su file" in header lo
-  // segnala sempre, così non si ripete l'errore di prima (dati che sembravano
-  // salvati e invece non lo erano da nessuna parte).
-  const SYNC_API = '/api/data';
+  // ===== Archivio dati: dati.json è l'unica fonte di verità =====
+  // Tutti i dati (conti, movimenti, investimenti, chat, memoria e anche le
+  // preferenze come tema e sezioni compresse) vivono SOLO in dati.json, letto e
+  // scritto da server.py. La pagina ne tiene una copia in memoria (store),
+  // caricata all'avvio; ogni modifica viene scritta subito e per intero su
+  // dati.json con una richiesta sincrona, quindi quando store.setItem()
+  // ritorna il dato è già su disco (oppure l'errore è già stato segnalato).
+  // Il browser non conserva nessuna copia (niente localStorage): se server.py
+  // non è raggiungibile la dashboard non parte, invece di lavorare su una
+  // copia che poi andrebbe persa o in conflitto con il file.
+  const DATA_API = '/api/data';
+  const DATA_KEY_PREFIX = 'skender_fin';
+  const SAVE_RETRY_MS = 5000;
   window.__fileSyncOk = false;
 
-  function hydrateFromServerFileSync() {
-    try {
+  // Timestamp globale "ultima modifica dati", aggiornato da OGNI operazione che
+  // scrive dati (conti, investimenti, immobili, spese, trasferimenti, addebiti CC
+  // maturati) — non va confuso con d.lastUpdated, che si aggiorna solo dal modal
+  // "Aggiorna dati". Serve al controllo di freschezza dell'import di un backup.
+  const LAST_MODIFIED_KEY = 'skender_fin_last_modified_v1';
+
+  const store = (function() {
+    let data = {};
+    // Versione di dati.json da cui parte questa pagina (ETag di server.py):
+    // ogni salvataggio la invia in If-Match, e il server rifiuta (409) se nel
+    // frattempo il file è stato cambiato da un'altra scheda o finestra.
+    let version = null;
+    let conflict = false;
+    let failureAlerted = false;
+    let retryTimer = null;
+
+    function request(method, body) {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', SYNC_API, false); // sincrona: deve bloccare finché non finisce
-      xhr.send(null);
+      xhr.open(method, DATA_API, false); // sincrona: vedi commento sopra
+      if (body !== undefined) {
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('If-Match', version || '');
+      }
+      xhr.send(body === undefined ? null : body);
+      if (xhr.status === 409) {
+        const err = new Error('dati.json modificato altrove');
+        err.conflict = true;
+        throw err;
+      }
       if (xhr.status !== 200) throw new Error('HTTP ' + xhr.status);
-      const data = JSON.parse(xhr.responseText);
-      Object.keys(data).forEach(function(k) {
-        if (k.indexOf('skender_fin') === 0 && typeof data[k] === 'string') {
-          localStorage.setItem(k, data[k]);
-        }
+      version = xhr.getResponseHeader('ETag');
+      return xhr.responseText;
+    }
+
+    function load() {
+      const parsed = JSON.parse(request('GET'));
+      data = {};
+      Object.keys(parsed).forEach(function(k) {
+        if (k.indexOf(DATA_KEY_PREFIX) === 0 && typeof parsed[k] === 'string') data[k] = parsed[k];
       });
       window.__fileSyncOk = true;
-    } catch (err) {
-      window.__fileSyncOk = false;
-      console.warn('Server locale non raggiungibile all\'avvio (server.py avviato?), uso il localStorage del browser:', err.message);
     }
-  }
-  hydrateFromServerFileSync();
 
-  function gatherFullState() {
-    const out = {};
-    Object.keys(localStorage).forEach(function(k) {
-      if (k.indexOf('skender_fin') === 0) out[k] = localStorage.getItem(k);
-    });
-    return out;
-  }
-
-  // Restituisce una Promise che si risolve con true/false (salvataggio riuscito
-  // o no): le chiamate normali la ignorano, shutdownDashboard() la attende.
-  function syncToServerFile() {
-    return fetch(SYNC_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(gatherFullState()),
-    }).then(function(res) {
-      window.__fileSyncOk = !!(res && res.ok);
+    // Scrive l'intero stato su dati.json; restituisce true se è riuscito.
+    // Se fallisce, avvisa una volta e riprova da solo ogni SAVE_RETRY_MS finché
+    // server.py torna raggiungibile: lo stato in memoria resta quello giusto.
+    function persist() {
+      // Dopo un conflitto questa pagina non scrive più: il file ha dati più
+      // recenti dei suoi e l'unica cosa sicura è ricaricarla.
+      if (conflict) { updateSyncIndicator(); return false; }
+      try {
+        request('POST', JSON.stringify(data));
+        window.__fileSyncOk = true;
+        failureAlerted = false;
+        if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+      } catch (err) {
+        window.__fileSyncOk = false;
+        console.warn('Salvataggio su dati.json non riuscito:', err.message);
+        if (err.conflict) {
+          conflict = true;
+          window.__dataConflict = true;
+          if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+          updateSyncIndicator();
+          alert('ATTENZIONE: dati.json è stato modificato da un\'altra scheda o finestra della dashboard, quindi questa pagina ha dati non aggiornati e NON salva più, per non sovrascrivere quelle modifiche.\n\nRicarica la pagina per vedere i dati attuali. L\'ultima modifica fatta qui non è stata salvata: dopo aver ricaricato, rifalla se serve.');
+          return false;
+        }
+        if (!retryTimer) retryTimer = setInterval(persist, SAVE_RETRY_MS);
+        if (!failureAlerted) {
+          failureAlerted = true;
+          alert('ATTENZIONE: la modifica NON è stata salvata in dati.json (server.py non raggiungibile?).\n\nRiavvia server.py: la pagina riprova da sola ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi e salva tutto appena ci riesce. Non chiudere né ricaricare questa pagina prima, altrimenti le modifiche non salvate vanno perse.');
+        }
+      }
       updateSyncIndicator();
       return window.__fileSyncOk;
-    }).catch(function(err) {
-      window.__fileSyncOk = false;
-      console.warn('Impossibile salvare su file:', err.message);
-      updateSyncIndicator();
-      return false;
-    });
+    }
+
+    return {
+      load: load,
+      persist: persist,
+      getItem: function(k) { return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v) { data[k] = String(v); persist(); },
+      // Sostituisce tutto lo stato in memoria senza salvare (serve alla
+      // migrazione qui sotto, che poi chiama persist()).
+      replaceAll: function(obj) {
+        data = {};
+        Object.keys(obj).forEach(function(k) { if (k.indexOf(DATA_KEY_PREFIX) === 0) data[k] = String(obj[k]); });
+      },
+    };
+  })();
+
+  function showStartupError(detail) {
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:520px;margin:80px auto;text-align:center;';
+    const title = document.createElement('h1');
+    title.style.cssText = 'font-size:20px;margin-bottom:12px;';
+    title.textContent = 'Dashboard non disponibile';
+    const text = document.createElement('p');
+    text.textContent = 'Non riesco a leggere dati.json da server.py (' + detail + '). ' +
+      'Avvia la dashboard con avvia-dashboard.command e aprila da http://localhost:8765/.';
+    box.appendChild(title);
+    box.appendChild(text);
+    document.body.innerHTML = '';
+    document.body.appendChild(box);
   }
 
-  // Chiusura ordinata: prima un ultimo salvataggio completo su dati.json
-  // (atteso, non "fire and forget"), poi si chiede a server.py di fermarsi.
+  // Migrazione una tantum: le versioni precedenti tenevano una copia dei dati
+  // nel localStorage del browser. Qui la si elimina; se era più recente di
+  // dati.json (modifiche mai arrivate sul file), prima si chiede se importarla.
+  function migrateLegacyBrowserStorage() {
+    let keys;
+    try {
+      keys = Object.keys(localStorage).filter(function(k) { return k.indexOf(DATA_KEY_PREFIX) === 0; });
+    } catch { return; }
+    if (!keys.length) return;
+
+    const browserModified = localStorage.getItem(LAST_MODIFIED_KEY);
+    const fileModified = store.getItem(LAST_MODIFIED_KEY);
+    const browserIsNewer = !!browserModified &&
+      (!fileModified || new Date(browserModified).getTime() > new Date(fileModified).getTime());
+
+    if (browserIsNewer && confirm(
+      'Questo browser contiene una copia dei dati PIÙ RECENTE di dati.json, rimasta da una versione precedente della dashboard.\n\n' +
+      'Ultima modifica nel browser: ' + browserModified + '\n' +
+      'Ultima modifica in dati.json: ' + (fileModified || 'sconosciuta') + '\n\n' +
+      'OK = importa la copia del browser in dati.json (sostituisce i dati del file)\n' +
+      'Annulla = tieni dati.json e scarta la copia del browser')) {
+      const snapshot = {};
+      keys.forEach(function(k) { snapshot[k] = localStorage.getItem(k); });
+      store.replaceAll(snapshot);
+      // Se non arriva su file, la copia del browser NON viene cancellata.
+      if (!store.persist()) return;
+    }
+    keys.forEach(function(k) { localStorage.removeItem(k); });
+  }
+
+  try {
+    store.load();
+  } catch (err) {
+    showStartupError(err.message || 'errore sconosciuto');
+    throw new Error('dati.json non raggiungibile: avvio della dashboard interrotto.');
+  }
+  migrateLegacyBrowserStorage();
+
+  // Se c'è una modifica non ancora arrivata su dati.json, il browser chiede
+  // conferma prima di chiudere o ricaricare la pagina.
+  window.__dashboardClosed = false;
+  window.addEventListener('beforeunload', function(e) {
+    // (Dopo un conflitto no: ricaricare è proprio ciò che serve.)
+    if (!window.__fileSyncOk && !window.__dashboardClosed && !window.__dataConflict) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  // Chiusura ordinata: un ultimo salvataggio completo su dati.json (sincrono),
+  // poi si chiede a server.py di fermarsi.
   async function shutdownDashboard() {
     if (!confirm('Chiudere la dashboard? I dati vengono salvati in dati.json e il server locale si ferma: per riaprirla servirà di nuovo avvia-dashboard.command.')) return;
 
-    const saved = await syncToServerFile();
-    if (!saved && !confirm('ATTENZIONE: l\'ultimo salvataggio su dati.json NON è riuscito (server.py non raggiungibile?). Le modifiche restano solo in questo browser. Chiudere comunque?')) return;
+    const saved = store.persist();
+    if (!saved && !confirm('ATTENZIONE: il salvataggio su dati.json NON è riuscito (server.py non raggiungibile?). Le modifiche non ancora salvate andranno perse. Chiudere comunque?')) return;
 
     try {
       const res = await fetch('/api/shutdown', {
@@ -1063,6 +1170,7 @@
       return;
     }
 
+    window.__dashboardClosed = true;
     document.body.innerHTML =
       '<div style="max-width:480px;margin:80px auto;text-align:center;">' +
       '<h1 style="font-size:20px;margin-bottom:12px;">Dashboard chiusa</h1>' +
@@ -1074,14 +1182,18 @@
   function updateSyncIndicator() {
     const el = document.getElementById('fileSyncStatus');
     if (!el) return;
-    if (window.__fileSyncOk) {
-      el.textContent = '💾 Salvataggio su file: attivo';
-      el.style.color = 'var(--green)';
-      el.title = 'I dati vengono scritti in dati.json a ogni modifica.';
-    } else {
-      el.textContent = '⚠️ Salvataggio su file: NON attivo';
+    if (window.__dataConflict) {
+      el.textContent = '⚠️ Dati non aggiornati: ricarica la pagina';
       el.style.color = 'var(--red)';
-      el.title = 'server.py non risulta raggiungibile: i dati restano solo nel browser. Avvia server.py e ricarica la pagina.';
+      el.title = 'dati.json è stato modificato da un\'altra scheda o finestra: questa pagina non salva più finché non la ricarichi.';
+    } else if (window.__fileSyncOk) {
+      el.textContent = '💾 Salvato in dati.json';
+      el.style.color = 'var(--green)';
+      el.title = 'Ogni modifica viene scritta subito in dati.json.';
+    } else {
+      el.textContent = '⚠️ Modifiche NON salvate';
+      el.style.color = 'var(--red)';
+      el.title = 'L\'ultimo salvataggio su dati.json non è riuscito (server.py non raggiungibile). Nuovo tentativo automatico ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi: non chiudere né ricaricare la pagina.';
     }
   }
 
@@ -1090,14 +1202,14 @@
   const MORTGAGE_MONTHLY = 595;
   const PENSION_LIMIT = 5300;
 
-  // Tema chiaro/scuro: preferenza salvata in localStorage, altrimenti si segue
+  // Tema chiaro/scuro: preferenza salvata in dati.json, altrimenti si segue
   // prefers-color-scheme del sistema. Applicato subito (prima del resto del
   // bootstrap) per evitare un flash del tema sbagliato al caricamento.
   const THEME_STORAGE_KEY = 'skender_fin_theme';
 
   function getPreferredTheme() {
     try {
-      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      const saved = store.getItem(THEME_STORAGE_KEY);
       if (saved === 'dark' || saved === 'light') return saved;
     } catch {}
     return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
@@ -1105,7 +1217,7 @@
 
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
+    try { store.setItem(THEME_STORAGE_KEY, theme); } catch {}
     const btn = document.getElementById('themeToggleBtn');
     if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
     updateChartDefaultsForTheme(theme);
@@ -1156,7 +1268,7 @@
 
   // Memoria a lungo termine del consulente: una nota markdown compatta con i fatti
   // duraturi discussi (obiettivi, preferenze, decisioni), NON un file reale sul
-  // disco — è una stringa persistita in localStorage, come tutto il resto. Si
+  // disco a sé — è una stringa salvata in dati.json, come tutto il resto. Si
   // aggiorna e comprime (max MEMORY_MAX_CHARS) solo quando premi "Cancella
   // conversazione", PRIMA che la cronologia venga svuotata, e viene sempre inclusa
   // nel prompt del consulente indipendentemente dalla cronologia recente — così
@@ -1167,25 +1279,20 @@
 
   function loadMemory() {
     try {
-      return localStorage.getItem(MEMORY_STORAGE_KEY) || '';
+      return store.getItem(MEMORY_STORAGE_KEY) || '';
     } catch { return ''; }
   }
 
   function saveMemory(text) {
-    localStorage.setItem(MEMORY_STORAGE_KEY, text);
+    store.setItem(MEMORY_STORAGE_KEY, text);
   }
 
   let advisorMemory = loadMemory();
 
-  // Timestamp globale "ultima modifica dati", aggiornato da OGNI operazione che
-  // scrive dati (conti, investimenti, immobili, spese, trasferimenti, addebiti CC
-  // maturati) — non va confuso con d.lastUpdated, che si aggiorna solo dal modal
-  // "Aggiorna dati". Serve per impedire l'import di un backup più vecchio dei dati
-  // già presenti sul dispositivo.
-  const LAST_MODIFIED_KEY = 'skender_fin_last_modified_v1';
+  // Aggiorna LAST_MODIFIED_KEY (definito in cima, con lo store): va chiamato
+  // da ogni operazione che modifica i dati.
   function touchLastModified() {
-    localStorage.setItem(LAST_MODIFIED_KEY, new Date().toISOString());
-    syncToServerFile();
+    store.setItem(LAST_MODIFIED_KEY, new Date().toISOString());
   }
 
   // Snapshot di contesto mercato/fiscale — raccolto via ricerca web il 04/08/2026.
@@ -1229,13 +1336,13 @@
   };
 
   function migrateLegacyFlows() {
-    const existing = localStorage.getItem(FLOW_STORAGE_KEY);
+    const existing = store.getItem(FLOW_STORAGE_KEY);
     if (existing) {
       try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
     }
     let legacy = {};
     try {
-      const s = localStorage.getItem(STORAGE_KEY);
+      const s = store.getItem(STORAGE_KEY);
       legacy = s ? JSON.parse(s) : {};
     } catch { legacy = {}; }
     const list = [
@@ -1244,12 +1351,12 @@
       { id: 'legacy-pension-emp', name: 'Contributo dipendente Cometa', category: 'pensione_dipendente', account: '', value: legacy.pensionEmp != null ? legacy.pensionEmp : 286 },
       { id: 'legacy-pension-az', name: 'Contributo azienda Cometa', category: 'pensione_azienda', account: '', value: legacy.pensionAz != null ? legacy.pensionAz : 50 },
     ];
-    localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
     return list;
   }
 
   function saveFlows(list) {
-    localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
   }
 
   let flows = migrateLegacyFlows();
@@ -1267,7 +1374,7 @@
   function loadData() {
     let d;
     try {
-      const s = localStorage.getItem(STORAGE_KEY);
+      const s = store.getItem(STORAGE_KEY);
       d = s ? { ...DEFAULTS, ...JSON.parse(s) } : { ...DEFAULTS };
     } catch { d = { ...DEFAULTS }; }
     // Stipendio e contributi Cometa non sono più campi fissi salvati qui: sono
@@ -1288,7 +1395,7 @@
       bper: parseFloat(document.getElementById('input-bper').value) || 0,
       revolut: parseFloat(document.getElementById('input-revolut').value) || 0,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    store.setItem(STORAGE_KEY, JSON.stringify(d));
     touchLastModified();
     closeModal();
     render(loadData());
@@ -1380,7 +1487,7 @@
 
   function loadFlowsDetailCollapsed() {
     try {
-      const saved = localStorage.getItem(FLOWS_DETAIL_COLLAPSE_KEY);
+      const saved = store.getItem(FLOWS_DETAIL_COLLAPSE_KEY);
       if (saved === 'true' || saved === 'false') return saved === 'true';
     } catch {}
     return true; // default: chiusa
@@ -1391,7 +1498,7 @@
     const chevron = document.getElementById('flowsDetailChevron');
     if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
     if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
-    try { localStorage.setItem(FLOWS_DETAIL_COLLAPSE_KEY, String(collapsed)); } catch {}
+    try { store.setItem(FLOWS_DETAIL_COLLAPSE_KEY, String(collapsed)); } catch {}
   }
 
   function toggleFlowsDetailCollapse() {
@@ -1446,13 +1553,13 @@
   // salvati nel record principale (STORAGE_KEY) nella nuova lista investimenti,
   // così nessun dato di Skender va perso. Se la lista esiste già, non fa nulla.
   function migrateLegacyInvestments() {
-    const existing = localStorage.getItem(INVESTMENT_STORAGE_KEY);
+    const existing = store.getItem(INVESTMENT_STORAGE_KEY);
     if (existing) {
       try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
     }
     let legacy = {};
     try {
-      const s = localStorage.getItem(STORAGE_KEY);
+      const s = store.getItem(STORAGE_KEY);
       legacy = s ? JSON.parse(s) : {};
     } catch { legacy = {}; }
     const list = [
@@ -1461,12 +1568,12 @@
       { id: 'legacy-pac9', name: 'PAC Fondo 9', sublabel: 'Fineco AM · Aggressivo · IE000D52GPT0', type: 'mercato', value: legacy.pac9 != null ? legacy.pac9 : 2896 },
       { id: 'legacy-pac6', name: 'PAC Fondo 6', sublabel: 'Fineco AM · Bilanciato · IE000KTYLDC4', type: 'mercato', value: legacy.pac6 != null ? legacy.pac6 : 2718 },
     ];
-    localStorage.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
     return list;
   }
 
   function saveInvestments(list) {
-    localStorage.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
   }
 
   let investments = migrateLegacyInvestments();
@@ -1697,7 +1804,7 @@
     if (isNaN(value)) { alert('Inserisci un valore valido.'); return; }
     const d = loadData();
     d[editingAccountKey] = value;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    store.setItem(STORAGE_KEY, JSON.stringify(d));
     touchLastModified();
     closeAccountBalanceModal();
     render(loadData());
@@ -1713,13 +1820,13 @@
   const PROPERTY_COLORS = ['#0f766e', '#0d9488', '#14b8a6', '#2dd4bf'];
 
   function migrateLegacyProperties() {
-    const existing = localStorage.getItem(PROPERTY_STORAGE_KEY);
+    const existing = store.getItem(PROPERTY_STORAGE_KEY);
     if (existing) {
       try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
     }
     let legacy = {};
     try {
-      const s = localStorage.getItem(STORAGE_KEY);
+      const s = store.getItem(STORAGE_KEY);
       legacy = s ? JSON.parse(s) : {};
     } catch { legacy = {}; }
     const list = [
@@ -1731,12 +1838,12 @@
         mortgage: legacy.mortgage != null ? legacy.mortgage : 19907,
       },
     ];
-    localStorage.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
     return list;
   }
 
   function saveProperties(list) {
-    localStorage.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
   }
 
   let properties = migrateLegacyProperties();
@@ -2070,7 +2177,7 @@
     if (!key) return;
     const d = loadData();
     d[key] = (d[key] || 0) + delta;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    store.setItem(STORAGE_KEY, JSON.stringify(d));
   }
 
   // Giorno del mese di scadenza in cui la carta di credito viene effettivamente
@@ -2185,13 +2292,13 @@
 
   function loadExpenses() {
     try {
-      const s = localStorage.getItem(EXPENSE_STORAGE_KEY);
+      const s = store.getItem(EXPENSE_STORAGE_KEY);
       return s ? JSON.parse(s) : [];
     } catch { return []; }
   }
 
   function saveExpenses(list) {
-    localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(list));
   }
 
   let expenses = loadExpenses();
@@ -2643,13 +2750,13 @@
 
   function loadTransfers() {
     try {
-      const s = localStorage.getItem(TRANSFER_STORAGE_KEY);
+      const s = store.getItem(TRANSFER_STORAGE_KEY);
       return s ? JSON.parse(s) : [];
     } catch { return []; }
   }
 
   function saveTransfers(list) {
-    localStorage.setItem(TRANSFER_STORAGE_KEY, JSON.stringify(list));
+    store.setItem(TRANSFER_STORAGE_KEY, JSON.stringify(list));
   }
 
   let transfers = loadTransfers();
@@ -2862,7 +2969,7 @@
 
     rows.push(csvRow([BACKUP_FORMAT_MARKER, BACKUP_FORMAT_VERSION]));
     rows.push(csvRow(['Generato il', new Date().toISOString()]));
-    rows.push(csvRow(['Ultima modifica dati', localStorage.getItem(LAST_MODIFIED_KEY) || (d.lastUpdated + 'T00:00:00.000Z')]));
+    rows.push(csvRow(['Ultima modifica dati', store.getItem(LAST_MODIFIED_KEY) || (d.lastUpdated + 'T00:00:00.000Z')]));
     rows.push('');
 
     rows.push(csvRow(['SEZIONE', 'CONTI']));
@@ -3099,7 +3206,7 @@
       // può importare (es. per tornare a uno stato precedente), ma solo dopo una
       // doppia conferma esplicita più sotto, perché le modifiche fatte dopo il
       // backup vanno perse.
-      const currentLastModified = localStorage.getItem(LAST_MODIFIED_KEY);
+      const currentLastModified = store.getItem(LAST_MODIFIED_KEY);
       const isOlderBackup = !!currentLastModified &&
         new Date(lastModifiedBackup).getTime() <= new Date(currentLastModified).getTime();
 
@@ -3233,7 +3340,7 @@
       if (!confirm(summary)) return;
       if (isOlderBackup && !confirm('Conferma definitiva: stai ripristinando dati PIÙ VECCHI di quelli attuali (backup del ' + lastModifiedBackup + ' contro dati del ' + currentLastModified + '). Le modifiche successive al backup verranno cancellate e NON potranno essere recuperate, a meno di averne un backup più recente. Procedere davvero?')) return;
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newD));
+      store.setItem(STORAGE_KEY, JSON.stringify(newD));
       flows = newFlows;
       saveFlows(flows);
       investments = newInvestments;
@@ -3244,11 +3351,7 @@
       saveExpenses(expenses);
       transfers = newTransfers;
       saveTransfers(transfers);
-      localStorage.setItem(LAST_MODIFIED_KEY, lastModifiedBackup);
-      // I save*() qui sopra scrivono solo nel localStorage: senza questa
-      // chiamata dati.json resterebbe allo stato precedente e al prossimo
-      // avvio l'importazione verrebbe annullata dall'idratazione da file.
-      syncToServerFile();
+      store.setItem(LAST_MODIFIED_KEY, lastModifiedBackup);
 
       migratePendingCcDueMonths();
       applyMaturedCreditCardCharges();
@@ -3449,13 +3552,13 @@
 
   function loadChat() {
     try {
-      const s = localStorage.getItem(CHAT_STORAGE_KEY);
+      const s = store.getItem(CHAT_STORAGE_KEY);
       return s ? JSON.parse(s) : [];
     } catch { return []; }
   }
 
   function saveChat(history) {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(history));
+    store.setItem(CHAT_STORAGE_KEY, JSON.stringify(history));
   }
 
   let chatHistory = loadChat();
@@ -3580,12 +3683,12 @@
   // nota libera qui sotto.
   // Sezione "Memoria del consulente": collassabile, chiusa di default (anche al
   // primo utilizzo). Lo stato aperto/chiuso scelto dall'utente viene ricordato
-  // tra una sessione e l'altra in localStorage, come il tema.
+  // tra una sessione e l'altra in dati.json, come il tema.
   const MEMORY_COLLAPSE_KEY = 'skender_fin_memory_collapsed_v1';
 
   function loadMemoryCollapsed() {
     try {
-      const saved = localStorage.getItem(MEMORY_COLLAPSE_KEY);
+      const saved = store.getItem(MEMORY_COLLAPSE_KEY);
       if (saved === 'true' || saved === 'false') return saved === 'true';
     } catch {}
     return true; // default: chiusa
@@ -3596,7 +3699,7 @@
     const chevron = document.getElementById('memoryCollapseChevron');
     if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
     if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
-    try { localStorage.setItem(MEMORY_COLLAPSE_KEY, String(collapsed)); } catch {}
+    try { store.setItem(MEMORY_COLLAPSE_KEY, String(collapsed)); } catch {}
   }
 
   function toggleMemoryCollapse() {

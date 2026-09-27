@@ -5,8 +5,11 @@ Server locale per la Dashboard Finanziaria.
 Cosa fa:
 - Serve il file financial-dashboard.html su http://localhost:8765/
 - Espone due endpoint per la persistenza vera su disco:
-    GET  /api/data  -> restituisce il contenuto di dati.json (o {} se non esiste ancora)
-    POST /api/data  -> sovrascrive dati.json con il corpo JSON ricevuto
+    GET  /api/data  -> restituisce il contenuto di dati.json (o {} se non esiste
+                       ancora) e la sua versione nell'header ETag
+    POST /api/data  -> sovrascrive dati.json con il corpo JSON ricevuto, solo se
+                       l'header If-Match indica la versione attuale del file
+                       (altrimenti 409: dati cambiati da un'altra scheda)
 - Espone il consulente AI:
     POST /api/ask     -> inoltra il prompt al fornitore AI configurato
     GET  /api/ai-info -> fornitore/modello attivi e cosa eventualmente manca
@@ -33,6 +36,7 @@ backup (Dropbox, iCloud, chiavetta USB, ecc.) in qualunque momento.
 """
 
 import errno
+import hashlib
 import json
 import os
 import signal
@@ -58,26 +62,46 @@ DATA_LOCK = threading.Lock()
 ALLOWED_HOSTS = {'localhost:%d' % PORT, '127.0.0.1:%d' % PORT}
 
 
+def data_version(raw):
+    """Versione di dati.json (ETag): hash del contenuto esatto del file."""
+    return '"%s"' % hashlib.sha256(raw).hexdigest()[:20]
+
+
 def read_data_file():
-    if not os.path.exists(DATA_FILE):
-        return {}
+    """Restituisce (dati, versione) di dati.json."""
     try:
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
-    except (json.JSONDecodeError, OSError) as e:
+        with open(DATA_FILE, 'rb') as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return {}, data_version(b'')
+    version = data_version(raw)
+    content = raw.decode('utf-8', errors='replace').strip()
+    if not content:
+        return {}, version
+    try:
+        return json.loads(content), version
+    except json.JSONDecodeError as e:
         # Non solleviamo un errore che blocchi il server: meglio partire da
         # uno stato vuoto e segnalarlo chiaramente in console, piuttosto che
         # impedire del tutto l'avvio per un file corrotto.
         print('ATTENZIONE: dati.json non è leggibile (%s). Riparti da vuoto; '
               'il file corrotto NON viene sovrascritto finché non salvi di '
               'nuovo dalla dashboard.' % e, file=sys.stderr)
-        return {}
+        return {}, version
 
 
-def write_data_file(data):
+class VersionConflict(Exception):
+    pass
+
+
+def write_data_file(data, expected_version):
+    """Scrive dati.json solo se è ancora alla versione da cui è partita la
+    pagina (expected_version); restituisce la nuova versione.
+
+    Così una scheda rimasta aperta con dati vecchi (o una versione precedente
+    della dashboard) non può sovrascrivere modifiche fatte altrove.
+    """
+    content = json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8')
     # Scrittura "atomica": prima su un file temporaneo, poi rinominato sopra
     # il file finale. Se il processo viene interrotto a metà scrittura (es.
     # il Mac va in sospensione, il terminale viene chiuso di colpo), dati.json
@@ -85,9 +109,13 @@ def write_data_file(data):
     # a metà scritto e corrotto.
     tmp_path = DATA_FILE + '.tmp'
     with DATA_LOCK:
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        _, current_version = read_data_file()
+        if expected_version != current_version:
+            raise VersionConflict()
+        with open(tmp_path, 'wb') as f:
+            f.write(content)
         os.replace(tmp_path, DATA_FILE)
+    return data_version(content)
 
 
 def request_shutdown(server):
@@ -102,10 +130,12 @@ class Handler(BaseHTTPRequestHandler):
         # terminale lasciato aperto durante l'uso normale).
         sys.stderr.write('%s - %s\n' % (self.address_string(), fmt % args))
 
-    def _send_json(self, obj, status=200):
+    def _send_json(self, obj, status=200, etag=None):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
+        if etag:
+            self.send_header('ETag', etag)
         self.send_header('Content-Length', str(len(body)))
         # Mai cache per le risposte dinamiche: contenuto vecchio servito da
         # cache ha già causato confusione in passato (dati che sembravano
@@ -148,7 +178,8 @@ class Handler(BaseHTTPRequestHandler):
         if self._reject_foreign_request(require_json=False):
             return
         if self.path == '/api/data':
-            self._send_json(read_data_file())
+            data, version = read_data_file()
+            self._send_json(data, etag=version)
             return
         if self.path == '/api/ai-info':
             self._send_json(ai_providers.info())
@@ -176,8 +207,16 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(raw.decode('utf-8'))
             if not isinstance(data, dict):
                 raise ValueError('Il corpo della richiesta deve essere un oggetto JSON.')
-            write_data_file(data)
-            self._send_json({'status': 'ok'})
+            expected = self.headers.get('If-Match')
+            if not expected:
+                # Le versioni precedenti della dashboard non inviano If-Match:
+                # una loro scheda rimasta aperta non deve poter scrivere.
+                self._send_json({'status': 'error', 'message': 'Pagina di una versione precedente della dashboard: ricaricala.'}, status=428)
+                return
+            new_version = write_data_file(data, expected)
+            self._send_json({'status': 'ok'}, etag=new_version)
+        except VersionConflict:
+            self._send_json({'status': 'error', 'message': 'dati.json è stato modificato da un\'altra scheda o finestra: ricarica la pagina.'}, status=409)
         except (ValueError, json.JSONDecodeError) as e:
             self._send_json({'status': 'error', 'message': str(e)}, status=400)
         except OSError as e:
