@@ -1,0 +1,7 @@
+# Dati finanziari personali e segreti: non vanno nel repository
+dati.json
+dati.json.tmp
+anthropic-api-key.txt
+
+__pycache__/
+.DS_Store

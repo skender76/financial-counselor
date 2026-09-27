@@ -1,0 +1,3943 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Finanziaria</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --border: #e5e7eb;
+      --text-primary: #111827;
+      --text-secondary: #6b7280;
+      --text-muted: #9ca3af;
+      --green: #059669;
+      --red: #dc2626;
+      --blue: #2563eb;
+      --amber: #d97706;
+      --amber-bg: #fffbeb;
+      --amber-text: #92400e;
+      --tag-acc-bg: #eff6ff;
+      --tag-acc-text: #2563eb;
+      --tag-pen-bg: #f0fdf4;
+      --tag-pen-text: #059669;
+      --danger-bg: #fef2f2;
+      --danger-border: #fecaca;
+      --overlay: rgba(0,0,0,0.4);
+      --modal-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #262624;
+      --surface: #2f2e2b;
+      --border: #47463f;
+      --text-primary: #ECECE6;
+      --text-secondary: #b6b5ac;
+      --text-muted: #8c8b82;
+      --green: #4ade80;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --amber: #fbbf24;
+      --amber-bg: #3d2e0f;
+      --amber-text: #fcd34d;
+      --tag-acc-bg: #1e3a5f;
+      --tag-acc-text: #93c5fd;
+      --tag-pen-bg: #0f3d2e;
+      --tag-pen-text: #6ee7b7;
+      --danger-bg: #3f1616;
+      --danger-border: #7f1d1d;
+      --overlay: rgba(0,0,0,0.6);
+      --modal-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .header-meta { font-size: 12px; color: var(--text-muted); }
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .nw-hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .nw-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      text-align: center;
+    }
+    .nw-card.primary {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      border-color: transparent;
+      color: white;
+    }
+    .nw-card.primary .nw-label { color: rgba(255,255,255,0.75); }
+    .nw-card.primary .nw-sub { color: rgba(255,255,255,0.55); }
+    .nw-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;
+    }
+    .nw-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+    .nw-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .chart-review-row {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: stretch;
+    }
+    .chart-row {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 0;
+    }
+    .chart-container { height: 160px; position: relative; }
+    .legend { display: flex; flex-direction: column; gap: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .legend-pct { margin-left: auto; font-weight: 600; color: var(--text-secondary); font-size: 12px; }
+    .review-card { display: flex; flex-direction: column; max-height: 400px; overflow-y: auto; }
+    .review-section { margin-bottom: 10px; }
+    .review-section:last-child { margin-bottom: 0; }
+    .review-section-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 5px;
+    }
+    .review-item {
+      font-size: 12px; line-height: 1.5; margin-bottom: 6px;
+      padding-left: 16px; position: relative; color: var(--text-primary);
+    }
+    .review-item::before { content: '–'; position: absolute; left: 0; color: var(--text-muted); }
+    .review-item.pos::before { content: '✓'; color: var(--green); font-weight: 700; }
+    .review-item.neg::before { content: '✗'; color: var(--red); font-weight: 700; }
+    .review-item.limit { color: var(--text-secondary); }
+    .review-item.limit::before { content: '•'; color: var(--amber); font-weight: 700; }
+    .review-disclaimer {
+      font-size: 10px; color: var(--text-muted); font-style: italic;
+      margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+    }
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px;
+    }
+    .line-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 0; border-bottom: 1px solid var(--border);
+    }
+    .line-item:last-child { border-bottom: none; }
+    .line-label { font-size: 13px; font-weight: 500; }
+    .line-sublabel { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+    .line-value { font-size: 14px; font-weight: 600; }
+    .line-value.green { color: var(--green); }
+    .line-value.red { color: var(--red); }
+    .line-value.blue { color: var(--blue); }
+    .line-value.gray { color: var(--text-secondary); }
+    .tag {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 1px 6px; border-radius: 4px; margin-left: 4px;
+    }
+    .tag-acc { background: var(--tag-acc-bg); color: var(--tag-acc-text); }
+    .tag-pen { background: var(--tag-pen-bg); color: var(--tag-pen-text); }
+    .flows-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .flow-item { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+    .flow-label { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+    .flow-value { font-size: 16px; font-weight: 700; }
+    .flow-value.green { color: var(--green); }
+    .flow-value.blue { color: var(--blue); }
+    .flow-sub { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+    .note {
+      font-size: 11px; color: var(--amber-text);
+      padding: 8px 12px; background: var(--amber-bg);
+      border-radius: 6px; border-left: 3px solid var(--amber);
+      margin-top: 12px;
+    }
+    .btn-edit {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 14px; font-size: 13px;
+      font-weight: 500; cursor: pointer; color: var(--text-primary);
+    }
+    .btn-edit:hover { background: var(--bg); }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: var(--overlay); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 16px; padding: 24px;
+      width: 480px; max-width: 95vw; max-height: 90vh;
+      overflow-y: auto; box-shadow: var(--modal-shadow);
+    }
+    .modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+    .modal-section { margin-bottom: 16px; }
+    .modal-section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-muted);
+      margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    .field-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .field-label { font-size: 13px; }
+    .field-input {
+      width: 130px; padding: 5px 10px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: 13px; text-align: right; font-family: inherit;
+    }
+    .field-input:focus { outline: none; border-color: var(--blue); }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+    .btn-cancel {
+      padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); font-size: 13px; cursor: pointer; font-family: inherit;
+    }
+    .btn-save {
+      padding: 8px 20px; border-radius: 8px; border: none;
+      background: var(--blue); color: white; font-size: 13px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+
+    /* Chat / consulente AI */
+    .chat-card { margin-bottom: 12px; }
+    .chat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .chat-header .section-title { margin-bottom: 0; }
+    .chat-context-note {
+      font-size: 10px; color: var(--text-muted); margin-bottom: 10px;
+      padding: 6px 10px; background: var(--bg); border-radius: 6px;
+    }
+    .btn-clear-chat {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 11px; cursor: pointer; text-decoration: underline;
+    }
+    .chat-log {
+      max-height: 320px; overflow-y: auto; display: flex; flex-direction: column;
+      gap: 8px; padding: 4px 2px; margin-bottom: 10px;
+    }
+    .chat-msg {
+      max-width: 85%; padding: 8px 12px; border-radius: 10px;
+      font-size: 12.5px; line-height: 1.5; white-space: pre-wrap;
+    }
+    .chat-msg.user {
+      align-self: flex-end; background: var(--blue); color: white;
+      border-bottom-right-radius: 2px;
+    }
+    .chat-msg.assistant {
+      align-self: flex-start; background: var(--bg); color: var(--text-primary);
+      border-bottom-left-radius: 2px; border: 1px solid var(--border);
+    }
+    .chat-msg.error {
+      align-self: flex-start; background: var(--danger-bg); color: var(--red);
+      border: 1px solid var(--danger-border);
+    }
+    .chat-msg.typing { align-self: flex-start; color: var(--text-muted); font-style: italic; }
+    .chat-input-row { display: flex; gap: 8px; }
+    .chat-attach-btn {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 0 12px; font-size: 15px; cursor: pointer; color: var(--text-secondary);
+    }
+    .chat-attach-btn:hover { background: var(--bg); }
+    .chat-attach-select {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 0 8px; font-size: 11px; cursor: pointer; color: var(--text-secondary);
+      font-family: inherit; max-width: 130px;
+    }
+    .chat-attach-chip {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+      padding: 4px 6px 4px 10px; margin-bottom: 8px;
+    }
+    .chat-attach-chip button {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
+      font-size: 12px; padding: 2px 4px;
+    }
+    .chat-attach-note { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+    .chat-input {
+      flex: 1; padding: 9px 12px; border: 1px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; resize: none;
+    }
+    .chat-input:focus { outline: none; border-color: var(--blue); }
+    .chat-send {
+      padding: 9px 18px; border-radius: 8px; border: none;
+      background: var(--blue); color: white; font-size: 13px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .chat-send:disabled { opacity: 0.5; cursor: default; }
+    .chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .chat-suggestion {
+      font-size: 11px; padding: 5px 10px; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--surface);
+      cursor: pointer; color: var(--text-secondary);
+    }
+    .chat-suggestion:hover { background: var(--bg); }
+
+    /* Spese */
+    .expense-card { margin-bottom: 12px; }
+    .expense-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .expense-header .section-title { margin-bottom: 0; }
+    .btn-add-expense {
+      background: var(--blue); color: white; border: none; border-radius: 8px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .expense-summary {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+      margin-bottom: 12px;
+    }
+    .expense-summary-item {
+      background: var(--bg); border-radius: 8px; padding: 8px 12px;
+    }
+    .expense-summary-label { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
+    .expense-summary-value { font-size: 15px; font-weight: 700; }
+    .expense-table-wrap { max-height: 280px; overflow-y: auto; }
+    .expense-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .expense-table th {
+      text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--surface);
+    }
+    .expense-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .expense-table tr:last-child td { border-bottom: none; }
+    .expense-account-tag {
+      display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px;
+      border-radius: 4px; background: var(--bg); color: var(--text-secondary);
+    }
+    .expense-amount { font-weight: 700; color: var(--red); text-align: right; white-space: nowrap; }
+    .expense-amount.credit { color: var(--green); }
+    .expense-desc-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+    .btn-del-expense {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 6px;
+    }
+    .btn-del-expense:hover { color: var(--red); }
+    .investment-row-actions { display: flex; align-items: center; gap: 2px; }
+    .btn-icon-sm {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 13px; line-height: 1; padding: 4px 6px;
+    }
+    .btn-icon-sm:hover { color: var(--blue); }
+    .btn-icon-sm.danger:hover { color: var(--red); }
+    .btn-icon-header {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; cursor: pointer; color: var(--text-secondary); padding: 0; font-family: inherit;
+    }
+    .btn-icon-header:hover { background: var(--bg); }
+    .btn-icon-header.danger { color: var(--red); border-color: var(--danger-border); }
+    .btn-icon-header.danger:hover { background: var(--danger-bg); }
+    .export-choice-btn {
+      display: block; width: 100%; text-align: left;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; margin-bottom: 10px; cursor: pointer; font-family: inherit;
+    }
+    .export-choice-btn:last-of-type { margin-bottom: 0; }
+    .export-choice-btn:hover { background: var(--bg); border-color: var(--blue); }
+    .export-choice-btn .title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .export-choice-btn .desc { font-size: 11px; color: var(--text-secondary); line-height: 1.4; }
+    .expense-empty { font-size: 12px; color: var(--text-muted); padding: 12px 4px; text-align: center; }
+    .expense-filter-bar {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px;
+    }
+    .filter-select {
+      width: auto; min-width: 100px; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 6px; font-size: 12px; text-align: left; font-family: inherit;
+      background: var(--surface); color: var(--text);
+    }
+    .btn-filter-reset {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg); color: var(--text-muted); font-size: 12px; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-filter-reset:hover { color: var(--text); }
+    .expense-filter-summary {
+      display: none; flex-wrap: wrap; gap: 14px; align-items: center;
+      font-size: 12px; color: var(--text-muted); background: var(--bg);
+      border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;
+    }
+    .expense-filter-summary strong { color: var(--text); }
+    .movement-breakdown { margin-bottom: 12px; }
+    .movement-breakdown-title {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-muted); margin-bottom: 6px; font-weight: 700;
+    }
+    .movement-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 5px; }
+    .movement-row-label { width: 160px; flex-shrink: 0; color: var(--text-secondary); }
+    .movement-row-bar-wrap { flex: 1; background: var(--bg); border-radius: 4px; height: 8px; overflow: hidden; }
+    .movement-row-bar { height: 100%; background: var(--blue); border-radius: 4px; }
+    .movement-row-value { width: 90px; text-align: right; font-weight: 600; flex-shrink: 0; font-size: 11px; }
+
+    /* Analisi annuale */
+    .annual-card { margin-bottom: 12px; }
+    .annual-year-select { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .annual-year-chip {
+      font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+      background: var(--surface); cursor: pointer; color: var(--text-secondary); font-family: inherit;
+    }
+    .annual-year-chip.active { background: var(--blue); color: white; border-color: var(--blue); }
+    .annual-table-wrap { margin-top: 14px; }
+    .annual-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .annual-table th {
+      text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--border);
+    }
+    .annual-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+    .annual-table td.num { text-align: right; font-weight: 600; }
+    .annual-table tr:last-child td { border-bottom: none; }
+    /* Analisi annuale ora mostra il flusso netto (entrate - uscite): un aumento
+       del netto è un miglioramento (verde), un calo è un peggioramento (rosso) —
+       semantica invertita rispetto a quando la colonna era "sole uscite". */
+    .annual-delta.pos { color: var(--green); }
+    .annual-delta.neg { color: var(--red); }
+    .expense-cc-note {
+      font-size: 10px; color: var(--text-muted); margin-top: 8px; padding: 6px 10px;
+      background: var(--bg); border-radius: 6px;
+    }
+
+    /* Trasferimenti tra conti */
+    .transfer-card { margin-bottom: 12px; }
+    .transfer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .transfer-header .section-title { margin-bottom: 0; }
+    .btn-add-transfer {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text-primary);
+      border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-add-transfer:hover { background: var(--bg); }
+    .transfer-route { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .transfer-arrow { color: var(--text-muted); font-weight: 400; }
+    .transfer-amount { font-weight: 700; color: var(--blue); text-align: right; white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 Dashboard Finanziaria</h1>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span class="header-meta" id="fileSyncStatus" style="font-size:11px;font-weight:600;"></span>
+    <span class="header-meta" id="lastUpdatedDisplay"></span>
+    <button class="btn-icon-header" id="themeToggleBtn" onclick="toggleTheme()" title="Cambia tema chiaro/scuro">🌙</button>
+    <input type="file" id="importFileInput" accept=".csv" style="display:none;" onchange="handleImportFileSelect(event)">
+    <button class="btn-edit" onclick="document.getElementById('importFileInput').click()" title="Importa un file di backup generato da questa dashboard">📤 Importa backup</button>
+    <button class="btn-edit" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
+    <button class="btn-edit" onclick="openModal()">✏️ Aggiorna dati</button>
+  </div>
+</div>
+
+<!-- Net Worth -->
+<div class="nw-hero">
+  <div class="nw-card primary">
+    <div class="nw-label">Patrimonio Netto Totale</div>
+    <div class="nw-value" id="netWorth">—</div>
+    <div class="nw-sub">Attività – passività</div>
+  </div>
+  <div class="nw-card">
+    <div class="nw-label">Patrimonio Liquido</div>
+    <div class="nw-value" id="liquidNetWorth">—</div>
+    <div class="nw-sub">Liquidità (Fineco+BPER+Revolut) + investimenti di mercato − mutui residui</div>
+  </div>
+  <div class="nw-card">
+    <div class="nw-label">Pensione + TFR</div>
+    <div class="nw-value" id="cometaHero" style="color:var(--blue)">—</div>
+    <div class="nw-sub">Cometa + TFR · illiquido a fine rapporto/67 anni</div>
+  </div>
+</div>
+
+<!-- Chart + Review -->
+<div class="chart-review-row">
+  <div class="card chart-row">
+    <div class="chart-container">
+      <canvas id="allocationChart"></canvas>
+    </div>
+    <div class="legend" id="chartLegend"></div>
+  </div>
+  <div class="card review-card">
+    <div class="section-title">🔍 Review qualitativa</div>
+    <div id="reviewContent"></div>
+  </div>
+</div>
+
+<!-- Memoria del consulente (collassabile, chiusa di default) -->
+<div class="card chat-card">
+  <div class="chat-header" style="cursor:pointer;" onclick="toggleMemoryCollapse()">
+    <div class="section-title">🧠 Memoria del consulente <span id="memoryCollapseChevron" style="font-size:10px;color:var(--text-muted);">▸</span></div>
+    <div style="display:flex;gap:12px;" onclick="event.stopPropagation()">
+      <button class="btn-clear-chat" onclick="toggleFixedRules()" id="fixedRulesToggleBtn">Regole fisse</button>
+      <button class="btn-clear-chat" onclick="toggleMemoryEditor()" id="memoryEditToggleBtn">Modifica</button>
+    </div>
+  </div>
+  <div id="memoryBodyWrap" style="display:none;">
+    <div id="fixedRulesWrap" style="display:none;margin-bottom:10px;">
+      <div class="chat-context-note" style="white-space:pre-wrap;font-family:var(--font-mono, monospace);">
+        Regole operative fisse (sempre incluse in ogni domanda al consulente, in inglese, NON modificabili né toccate dalla compressione automatica della memoria):
+      </div>
+      <div class="chat-context-note" id="fixedRulesText" style="white-space:pre-wrap;"></div>
+    </div>
+    <div class="chat-context-note" id="memoryDisplay"></div>
+    <div id="memoryEditorWrap" style="display:none;">
+      <textarea id="memoryEditorTextarea" class="chat-input" style="width:100%;min-height:120px;resize:vertical;"></textarea>
+      <div class="modal-actions" style="margin-top:8px;">
+        <button class="btn-cancel" onclick="cancelMemoryEdit()">Annulla</button>
+        <button class="btn-save" onclick="saveMemoryEdit()">Salva</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Chatbot consulente AI -->
+<div class="card chat-card">
+  <div class="chat-header">
+    <div class="section-title">💬 Consulente Finanziario AI</div>
+    <button class="btn-clear-chat" onclick="clearChat()" id="clearChatBtn">Cancella conversazione</button>
+  </div>
+  <div class="chat-context-note" id="chatContextNote"></div>
+  <div class="chat-suggestions">
+    <button class="chat-suggestion" onclick="askSuggestion('Conviene aumentare il contributo a Cometa questo mese?')">Conviene aumentare Cometa?</button>
+    <button class="chat-suggestion" onclick="askSuggestion('Il mio fondo di emergenza è sufficiente?')">Fondo di emergenza sufficiente?</button>
+    <button class="chat-suggestion" onclick="askSuggestion('Quanto avrò su Fineco a fine mese, assumendo nessuna spesa extra?')">Saldo Fineco fine mese?</button>
+    <button class="chat-suggestion" onclick="askSuggestion('Come posso diversificare meglio i miei investimenti di mercato attuali?')">Come diversificare gli investimenti?</button>
+  </div>
+  <div class="chat-log" id="chatLog"></div>
+  <div id="chatAttachChip" style="display:none;"></div>
+  <div class="chat-input-row">
+    <input type="file" id="chatFileInput" accept=".txt,.csv,.md" style="display:none;" onchange="handleChatFileSelect(event)">
+    <button class="chat-attach-btn" onclick="document.getElementById('chatFileInput').click()" title="Allega documento di testo (.txt, .csv, .md)">📎</button>
+    <select class="chat-attach-select" id="chatInvestmentDocSelect" onchange="attachInvestmentDocToChat()" title="Allega un documento KID/KIID già salvato su un investimento" style="display:none;">
+      <option value="">📄 Allega KID…</option>
+    </select>
+    <textarea class="chat-input" id="chatInput" rows="1" placeholder="Fai una domanda sulla tua situazione finanziaria..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendChat();}"></textarea>
+    <button class="chat-send" id="chatSendBtn" onclick="sendChat()">Invia</button>
+  </div>
+  <div class="chat-attach-note">Puoi allegare solo file di testo semplice (.txt, .csv, .md, max 2MB) — PDF e Word non sono ancora supportati: copia e incolla il testo nella domanda.</div>
+</div>
+
+<!-- Main Grid -->
+<div class="main-grid">
+  <div class="card">
+    <div class="expense-header">
+      <div class="section-title" style="margin-bottom:0;">💼 Investimenti</div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-icon-header" onclick="openInvestmentModal()" title="Aggiungi investimento">+</button>
+        <button class="btn-icon-header danger" onclick="confirmDeleteAllInvestments()" title="Elimina tutti gli investimenti">🗑️</button>
+      </div>
+    </div>
+    <div id="investmentsList"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">💵 Liquidità</div>
+    <div class="line-item">
+      <div>
+        <div class="line-label">Fineco</div>
+        <div class="line-sublabel">Conto principale + cash PAC</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="line-value gray" id="finecoVal">—</div>
+        <button class="btn-icon-sm" onclick="openAccountBalanceModal('fineco','Fineco')" title="Modifica saldo">✏️</button>
+      </div>
+    </div>
+    <div class="line-item">
+      <div>
+        <div class="line-label">BPER</div>
+        <div class="line-sublabel">Conto con mutuo e spese casa</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="line-value gray" id="bperVal">—</div>
+        <button class="btn-icon-sm" onclick="openAccountBalanceModal('bper','BPER')" title="Modifica saldo">✏️</button>
+      </div>
+    </div>
+    <div class="line-item">
+      <div>
+        <div class="line-label">Revolut</div>
+        <div class="line-sublabel">Spese quotidiane</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="line-value gray" id="revolutVal">—</div>
+        <button class="btn-icon-sm" onclick="openAccountBalanceModal('revolut','Revolut')" title="Modifica saldo">✏️</button>
+      </div>
+    </div>
+    <div class="expense-header" style="margin-top:14px;">
+      <div class="section-title" style="margin-bottom:0;">🏠 Immobile</div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-icon-header" onclick="openPropertyModal()" title="Aggiungi immobile">+</button>
+        <button class="btn-icon-header danger" onclick="confirmDeleteAllProperties()" title="Elimina tutti gli immobili">🗑️</button>
+      </div>
+    </div>
+    <div id="propertiesList"></div>
+  </div>
+</div>
+
+<!-- Add/Edit Investment Modal -->
+<div class="modal-overlay" id="investmentModalOverlay">
+  <div class="modal">
+    <h2 id="investmentModalTitle">💼 Nuovo investimento</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Nome</label>
+        <input type="text" class="field-input" id="investment-name" style="width:200px;" placeholder="es. PAC Fondo 9">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Sotto-etichetta (opz.)</label>
+        <input type="text" class="field-input" id="investment-sublabel" style="width:200px;" placeholder="es. Fineco AM · Aggressivo">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Tipo</label>
+        <select class="field-input" id="investment-type" style="width:200px;" onchange="onInvestmentTypeChange()">
+          <option value="mercato">Investimento di mercato (liquido)</option>
+          <option value="pensione">Pensione / TFR (illiquido)</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Valore attuale (€)</label>
+        <input type="number" class="field-input" id="investment-value" step="1" min="0">
+      </div>
+    </div>
+    <div class="modal-section" id="investmentDocumentSection">
+      <div class="modal-section-title">Documento KID/KIID (opz.)</div>
+      <input type="file" id="investmentDocFileInput" accept=".txt,.md" style="display:none;" onchange="handleInvestmentDocSelect(event)">
+      <div id="investmentDocChip" style="margin-bottom:8px;"></div>
+      <button class="btn-cancel" type="button" onclick="document.getElementById('investmentDocFileInput').click()">📎 Allega file (.txt, .md)</button>
+      <div class="chat-attach-note" style="margin-top:6px;">Solo file di testo semplice (.txt, .md) — non PDF: il consulente AI può leggere solo testo. Se hai un PDF, copia il testo del KID in un file .md e allegalo qui.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeInvestmentModal()">Annulla</button>
+      <button class="btn-save" onclick="saveInvestment()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modifica rapida saldo conto (Liquidità) -->
+<div class="modal-overlay" id="accountBalanceModalOverlay">
+  <div class="modal">
+    <h2 id="accountBalanceModalTitle">✏️ Modifica saldo</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label" id="accountBalanceModalLabel">Saldo (€)</label>
+        <input type="number" class="field-input" id="account-balance-value" step="1">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAccountBalanceModal()">Annulla</button>
+      <button class="btn-save" onclick="saveAccountBalance()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Property Modal -->
+<div class="modal-overlay" id="propertyModalOverlay">
+  <div class="modal">
+    <h2 id="propertyModalTitle">🏠 Nuovo immobile</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Nome</label>
+        <input type="text" class="field-input" id="property-name" style="width:200px;" placeholder="es. Appartamento Traversetolo">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Sotto-etichetta (opz.)</label>
+        <input type="text" class="field-input" id="property-sublabel" style="width:200px;" placeholder="es. Quota 50% · ereditato">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Valore stimato (€)</label>
+        <input type="number" class="field-input" id="property-value" step="1000" min="0">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Mutuo residuo collegato (€)</label>
+        <input type="number" class="field-input" id="property-mortgage" step="1" min="0" placeholder="0 se nessun mutuo">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePropertyModal()">Annulla</button>
+      <button class="btn-save" onclick="saveProperty()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Monthly Flow Modal -->
+<div class="modal-overlay" id="flowModalOverlay">
+  <div class="modal">
+    <h2 id="flowModalTitle">📅 Nuovo flusso mensile</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Nome</label>
+        <input type="text" class="field-input" id="flow-name" style="width:200px;" placeholder="es. Stipendio netto">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Categoria</label>
+        <select class="field-input" id="flow-category" style="width:200px;">
+          <option value="stipendio">Stipendio</option>
+          <option value="pensione_dipendente">Contributo Cometa dipendente</option>
+          <option value="pensione_azienda">Contributo Cometa azienda</option>
+          <option value="altro">Altro</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Conto (opz., solo informativo)</label>
+        <select class="field-input" id="flow-account" style="width:200px;">
+          <option value="">Nessuno</option>
+          <option value="Fineco">Fineco</option>
+          <option value="BPER">BPER</option>
+          <option value="Revolut">Revolut</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Importo mensile (€)</label>
+        <input type="number" class="field-input" id="flow-value" step="1" min="0">
+      </div>
+      <div class="field-row" style="margin-bottom:0;">
+        <span style="font-size:11px;color:var(--text-muted);">Questo importo è solo di riferimento: non viene accreditato/addebitato automaticamente sul saldo del conto. Se l'entrata o l'uscita avviene davvero, registrala anche come Movimento.</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeFlowModal()">Annulla</button>
+      <button class="btn-save" onclick="saveFlow()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Choice Modal -->
+<div class="modal-overlay" id="exportChoiceModalOverlay">
+  <div class="modal">
+    <h2>📥 Esporta dati</h2>
+    <button class="export-choice-btn" onclick="exportReport(); closeExportChoiceModal();">
+      <div class="title">📄 Report leggibile</div>
+      <div class="desc">CSV pensato per essere letto: etichette in italiano, importi semplici, stato spese a carta di credito descritto in una frase. Buono da consultare o archiviare, non pensato per essere reimportato.</div>
+    </button>
+    <button class="export-choice-btn" onclick="exportBackup(); closeExportChoiceModal();">
+      <div class="title">💾 Backup completo (reimportabile)</div>
+      <div class="desc">CSV con i campi grezzi esatti usati dalla dashboard. Usalo per fare un backup vero: puoi reimportarlo più avanti con "📤 Importa backup" per ricreare tutto il contenuto.</div>
+    </button>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExportChoiceModal()">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- Movimenti -->
+<div class="card expense-card">
+  <div class="expense-header">
+    <div class="section-title">💸 Movimenti</div>
+    <div style="display:flex;gap:6px;">
+      <input type="file" id="recoverImportFileInput" accept=".csv" style="display:none;" onchange="handleRecoverImportFileSelect(event)">
+      <button class="btn-edit" onclick="document.getElementById('recoverImportFileInput').click()" title="Aggiunge movimenti da un CSV di recupero, senza toccare saldi o altre sezioni">📥 Importa movimenti recuperati</button>
+      <button class="btn-add-expense" onclick="openExpenseModal()">+ Aggiungi movimentazione</button>
+    </div>
+  </div>
+  <div class="expense-summary" id="expenseSummary"></div>
+  <div class="movement-breakdown" id="expenseMovementBreakdown"></div>
+  <div class="expense-filter-bar">
+    <select class="filter-select" id="filter-month" onchange="applyExpenseFilters()">
+      <option value="">Tutti i mesi</option>
+      <option value="01">Gennaio</option>
+      <option value="02">Febbraio</option>
+      <option value="03">Marzo</option>
+      <option value="04">Aprile</option>
+      <option value="05">Maggio</option>
+      <option value="06">Giugno</option>
+      <option value="07">Luglio</option>
+      <option value="08">Agosto</option>
+      <option value="09">Settembre</option>
+      <option value="10">Ottobre</option>
+      <option value="11">Novembre</option>
+      <option value="12">Dicembre</option>
+    </select>
+    <select class="filter-select" id="filter-year" onchange="applyExpenseFilters()"></select>
+    <select class="filter-select" id="filter-account" onchange="applyExpenseFilters()">
+      <option value="">Tutti i conti</option>
+      <option value="Fineco">Fineco</option>
+      <option value="BPER">BPER</option>
+      <option value="Revolut">Revolut</option>
+    </select>
+    <select class="filter-select" id="filter-direction" onchange="applyExpenseFilters()">
+      <option value="">Tutte le direzioni</option>
+      <option value="addebito">Solo addebiti</option>
+      <option value="accredito">Solo accrediti</option>
+    </select>
+    <select class="filter-select" id="filter-category" onchange="applyExpenseFilters()"></select>
+    <button class="btn-filter-reset" onclick="resetExpenseFilters()" title="Rimuovi tutti i filtri">✕ Reset filtri</button>
+  </div>
+  <div class="expense-filter-summary" id="expenseFilterSummary"></div>
+  <div class="expense-table-wrap">
+    <table class="expense-table">
+      <thead>
+        <tr>
+          <th>Data</th><th>Conto</th><th>Categoria / Descrizione</th><th>Movimento</th><th style="text-align:right;">Importo</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="expenseTableBody"></tbody>
+    </table>
+  </div>
+  <div class="expense-cc-note">Addebiti in contanti, ritiro contanti, carta di debito e bonifico vengono scalati subito dal saldo del conto selezionato; gli accrediti vengono aggiunti subito. I soli addebiti con carta di credito NON sono scalati subito: restano "in attesa" e vengono addebitati automaticamente il mese successivo (al primo caricamento del dashboard in quel mese). Puoi comunque correggere i saldi manualmente da "✏️ Aggiorna dati" per riconciliarli con l'estratto conto reale — l'ultimo valore che inserisci lì sovrascrive sempre tutto.</div>
+</div>
+
+<!-- Add Movement Modal -->
+<div class="modal-overlay" id="expenseModalOverlay">
+  <div class="modal">
+    <h2>💸 Aggiungi movimentazione</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Direzione</label>
+        <select class="field-input" id="expense-direction" style="width:160px;" onchange="onExpenseDirectionChange()">
+          <option value="addebito">Addebito (uscita)</option>
+          <option value="accredito">Accredito (entrata)</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Data</label>
+        <input type="date" class="field-input" id="expense-date" style="width:160px;">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Conto di riferimento</label>
+        <select class="field-input" id="expense-account" style="width:160px;">
+          <option value="Fineco">Fineco</option>
+          <option value="BPER">BPER</option>
+          <option value="Revolut">Revolut</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Tipo movimento</label>
+        <select class="field-input" id="expense-movement" style="width:160px;"></select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Categoria</label>
+        <select class="field-input" id="expense-category" style="width:160px;" onchange="onExpenseCategoryChange()"></select>
+      </div>
+      <div class="field-row" id="expense-necessity-row" style="display:none;">
+        <label class="field-label">Necessità</label>
+        <select class="field-input" id="expense-necessity" style="width:160px;">
+          <option value="">Seleziona…</option>
+          <option value="necessaria">Necessaria (utenze, igiene, ecc.)</option>
+          <option value="discrezionale">Discrezionale</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Descrizione</label>
+        <input type="text" class="field-input" id="expense-description" style="width:160px;" placeholder="es. Spesa Esselunga">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Importo (€)</label>
+        <input type="number" class="field-input" id="expense-amount" step="0.01" min="0">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExpenseModal()">Annulla</button>
+      <button class="btn-save" onclick="addExpense()">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Analisi annuale movimenti -->
+<div class="card annual-card">
+  <div class="section-title">📊 Analisi annuale — flusso netto (confronto tra anni)</div>
+  <div class="annual-year-select" id="annualYearSelect"></div>
+  <div class="chart-container" style="height:220px;">
+    <canvas id="annualChart"></canvas>
+  </div>
+  <div class="annual-table-wrap" id="annualTableWrap"></div>
+  <div class="expense-cc-note">Mostra il flusso netto mensile (entrate − uscite) sulla base dei movimenti che hai registrato manualmente nel registro movimenti (gennaio–dicembre per ogni anno). Anni o mesi senza dati inseriti risultano a zero, non necessariamente a flusso reale nullo.</div>
+</div>
+
+<!-- Trasferimenti tra conti -->
+<div class="card transfer-card">
+  <div class="transfer-header">
+    <div class="section-title">🔄 Trasferimenti tra conti</div>
+    <button class="btn-add-transfer" onclick="openTransferModal()">+ Nuovo trasferimento</button>
+  </div>
+  <div class="expense-table-wrap" id="transferTableWrap"></div>
+</div>
+
+<!-- Add Transfer Modal -->
+<div class="modal-overlay" id="transferModalOverlay">
+  <div class="modal">
+    <h2>🔄 Trasferimento tra conti</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Data</label>
+        <input type="date" class="field-input" id="transfer-date" style="width:160px;">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Da conto</label>
+        <select class="field-input" id="transfer-from" style="width:160px;">
+          <option value="Fineco">Fineco</option>
+          <option value="BPER">BPER</option>
+          <option value="Revolut">Revolut</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">A conto</label>
+        <select class="field-input" id="transfer-to" style="width:160px;">
+          <option value="Fineco">Fineco</option>
+          <option value="BPER">BPER</option>
+          <option value="Revolut">Revolut</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Importo (€)</label>
+        <input type="number" class="field-input" id="transfer-amount" step="0.01" min="0">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Descrizione (opz.)</label>
+        <input type="text" class="field-input" id="transfer-description" style="width:160px;" placeholder="es. Giroconto mensile">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeTransferModal()">Annulla</button>
+      <button class="btn-save" onclick="addTransfer()">Trasferisci</button>
+    </div>
+  </div>
+</div>
+
+<!-- Monthly Flows -->
+<div class="card">
+  <div class="expense-header">
+    <div class="section-title" style="margin-bottom:0;">📅 Flussi mensili</div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn-icon-header" onclick="openFlowModal()" title="Aggiungi flusso mensile">+</button>
+      <button class="btn-icon-header danger" onclick="confirmDeleteAllFlows()" title="Elimina tutti i flussi mensili">🗑️</button>
+    </div>
+  </div>
+  <div class="flows-grid">
+    <div class="flow-item">
+      <div class="flow-label">Stipendio netto totale</div>
+      <div class="flow-value green" id="salaryDisplay">—</div>
+      <div class="flow-sub" id="salarySplitDisplay"></div>
+    </div>
+    <div class="flow-item">
+      <div class="flow-label">Contributo dipendente Cometa</div>
+      <div class="flow-value" id="pensionEmpDisplay">—</div>
+    </div>
+    <div class="flow-item">
+      <div class="flow-label">Contributo azienda Cometa</div>
+      <div class="flow-value" id="pensionAzDisplay">—</div>
+    </div>
+    <div class="flow-item">
+      <div class="flow-label">Totale → Cometa/mese</div>
+      <div class="flow-value blue" id="pensionTotalDisplay">—</div>
+    </div>
+  </div>
+  <div class="modal-section-title" style="margin-top:14px;cursor:pointer;" onclick="toggleFlowsDetailCollapse()">Dettaglio flussi <span id="flowsDetailChevron" style="font-size:10px;">▸</span></div>
+  <div id="flowsDetailWrap" style="display:none;">
+    <div id="flowsList"></div>
+  </div>
+  <div class="note" id="pensionNote"></div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>✏️ Aggiorna i tuoi dati</h2>
+    <div class="modal-section">
+      <div class="modal-section-title">Liquidità</div>
+      <div class="field-row">
+        <label class="field-label">Fineco – Cash (€)</label>
+        <input type="number" class="field-input" id="input-fineco" step="1">
+      </div>
+      <div class="field-row">
+        <label class="field-label">BPER – Cash (€)</label>
+        <input type="number" class="field-input" id="input-bper" step="1">
+      </div>
+      <div class="field-row" style="margin-bottom:0;">
+        <label class="field-label">Revolut (€)</label>
+        <input type="number" class="field-input" id="input-revolut" step="1">
+      </div>
+    </div>
+    <div class="modal-section">
+      <div class="field-row" style="margin-bottom:0;">
+        <span style="font-size:11px;color:var(--text-muted);">Fondo Cometa, TFR, PAC e ogni immobile (valore + mutuo collegato) ora si gestiscono dalle rispettive card "💼 Investimenti" e "🏠 Immobile" (✏️ per modificare, 🗑️ per eliminare).</span>
+      </div>
+    </div>
+    <div class="modal-section">
+      <div class="field-row" style="margin-bottom:0;">
+        <span style="font-size:11px;color:var(--text-muted);">Stipendio e contributi Cometa ora si gestiscono dalla card "📅 Flussi mensili" (✏️ per modificare, 🗑️ per eliminare, "+" per aggiungerne di nuovi).</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Annulla</button>
+      <button class="btn-save" onclick="saveData()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== Persistenza su file locale =====
+  // Un piccolo server Python (server.py), avviato separatamente su questo
+  // stesso computer, legge/scrive un vero file (dati.json) sul disco. Qui
+  // idratiamo il localStorage con l'ultimo stato salvato su file PRIMA che il
+  // resto della dashboard (poco più sotto) legga il localStorage per
+  // inizializzare conti/movimenti/investimenti/ecc. — quindi la chiamata deve
+  // essere sincrona e deve girare per prima, letteralmente come prima riga di
+  // tutto lo script. Se il server non è raggiungibile (non avviato), la
+  // dashboard funziona comunque sul localStorage del browser, ma NON sta
+  // scrivendo su file: l'indicatore "💾 Salvataggio su file" in header lo
+  // segnala sempre, così non si ripete l'errore di prima (dati che sembravano
+  // salvati e invece non lo erano da nessuna parte).
+  const SYNC_API = '/api/data';
+  window.__fileSyncOk = false;
+
+  function hydrateFromServerFileSync() {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', SYNC_API, false); // sincrona: deve bloccare finché non finisce
+      xhr.send(null);
+      if (xhr.status !== 200) throw new Error('HTTP ' + xhr.status);
+      const data = JSON.parse(xhr.responseText);
+      Object.keys(data).forEach(function(k) {
+        if (k.indexOf('skender_fin') === 0 && typeof data[k] === 'string') {
+          localStorage.setItem(k, data[k]);
+        }
+      });
+      window.__fileSyncOk = true;
+    } catch (err) {
+      window.__fileSyncOk = false;
+      console.warn('Server locale non raggiungibile all\'avvio (server.py avviato?), uso il localStorage del browser:', err.message);
+    }
+  }
+  hydrateFromServerFileSync();
+
+  function gatherFullState() {
+    const out = {};
+    Object.keys(localStorage).forEach(function(k) {
+      if (k.indexOf('skender_fin') === 0) out[k] = localStorage.getItem(k);
+    });
+    return out;
+  }
+
+  function syncToServerFile() {
+    fetch(SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gatherFullState()),
+    }).then(function(res) {
+      window.__fileSyncOk = !!(res && res.ok);
+      updateSyncIndicator();
+    }).catch(function(err) {
+      window.__fileSyncOk = false;
+      console.warn('Impossibile salvare su file:', err.message);
+      updateSyncIndicator();
+    });
+  }
+
+  function updateSyncIndicator() {
+    const el = document.getElementById('fileSyncStatus');
+    if (!el) return;
+    if (window.__fileSyncOk) {
+      el.textContent = '💾 Salvataggio su file: attivo';
+      el.style.color = 'var(--green)';
+      el.title = 'I dati vengono scritti in dati.json a ogni modifica.';
+    } else {
+      el.textContent = '⚠️ Salvataggio su file: NON attivo';
+      el.style.color = 'var(--red)';
+      el.title = 'server.py non risulta raggiungibile: i dati restano solo nel browser. Avvia server.py e ricarica la pagina.';
+    }
+  }
+
+  const STORAGE_KEY = 'skender_fin_v5';
+  const CHAT_STORAGE_KEY = 'skender_fin_chat_v1';
+  const MORTGAGE_MONTHLY = 595;
+  const PENSION_LIMIT = 5300;
+
+  // Tema chiaro/scuro: preferenza salvata in localStorage, altrimenti si segue
+  // prefers-color-scheme del sistema. Applicato subito (prima del resto del
+  // bootstrap) per evitare un flash del tema sbagliato al caricamento.
+  const THEME_STORAGE_KEY = 'skender_fin_theme';
+
+  function getPreferredTheme() {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {}
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
+    const btn = document.getElementById('themeToggleBtn');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    updateChartDefaultsForTheme(theme);
+  }
+
+  // Chart.js non legge le variabili CSS: bisogna impostare i colori di default
+  // (testo, griglia) manualmente e ricreare i grafici già esistenti perché i
+  // colori sono "cotti" nel canvas al momento della creazione, non live.
+  function updateChartDefaultsForTheme(theme) {
+    if (typeof Chart === 'undefined') return;
+    Chart.defaults.color = theme === 'dark' ? '#b6b5ac' : '#6b7280';
+    Chart.defaults.borderColor = theme === 'dark' ? '#47463f' : '#e5e7eb';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    // Ricrea i grafici esistenti con i nuovi colori (le funzioni distruggono
+    // e ricreano l'istanza Chart.js già esistente, vedi renderAnnualAnalysis/render).
+    if (typeof renderAnnualAnalysis === 'function') renderAnnualAnalysis();
+    if (typeof render === 'function' && typeof loadData === 'function') render(loadData());
+  }
+
+  applyTheme(getPreferredTheme());
+
+  // Persona/regole fisse del consulente AI: blocco IMMUTABILE, sempre incluso
+  // identico in ogni prompt, in inglese. Sostituisce la precedente istruzione di
+  // persona (in italiano) che era inline in buildFinalPrompt. Non fa parte della
+  // nota di memoria comprimibile qui sotto (advisorMemory) — non viene mai
+  // riassunto, tradotto o alterato dal ciclo di aggiornamento automatico della
+  // memoria, proprio per garantire che le regole restino sempre affidabili e
+  // testuali. Visibile in sola lettura nella card "🧠 Memoria del consulente".
+  const ADVISOR_SYSTEM_PROMPT = [
+    'You are a senior financial advisor specialized in personal real estate investment and market portfolios, operating under Italian tax/regulatory context unless I state otherwise.',
+    '',
+    'Rules:',
+    '- Every response distinguishes: (1) verified facts with citable source, (2) reasonable inferences/assumptions — explicitly flagged as such, (3) speculative scenarios. Never blend these without labeling.',
+    '- Never fabricate numbers, rates, or sources. If data is unavailable, say so and reason from stated assumptions instead.',
+    '- Before giving new allocation/investment advice, ask for updated risk tolerance, time horizon, liquidity needs, or exposure — unless already stated in this conversation.',
+    '- Give direct, concise feedback. No hedging phrases ("good idea, but..."). State objections immediately, upfront.',
+    '- Hold your position if I push back without new data or a valid counterargument. Change it only if the counterargument is genuinely sound — explain why.',
+    '- Flag directly, without softening, if my behavior deviates from the confirmed plan (e.g. touching the ETF position, redirecting the €400/month, or rationalizing an exception during a liquidity emergency).',
+    '- You are not a licensed financial advisor; flag when a decision requires a licensed professional (tax filing, legal contracts).',
+    '',
+    'Respond to Skender in Italian. These operating instructions are in English, but every reply in the conversation must be written in Italian.',
+  ].join('\n');
+
+  // Memoria a lungo termine del consulente: una nota markdown compatta con i fatti
+  // duraturi discussi (obiettivi, preferenze, decisioni), NON un file reale sul
+  // disco — è una stringa persistita in localStorage, come tutto il resto. Si
+  // aggiorna e comprime (max MEMORY_MAX_CHARS) solo quando premi "Cancella
+  // conversazione", PRIMA che la cronologia venga svuotata, e viene sempre inclusa
+  // nel prompt del consulente indipendentemente dalla cronologia recente — così
+  // sopravvive a qualunque cancellazione. Visibile e modificabile a mano dalla
+  // card "🧠 Memoria del consulente".
+  const MEMORY_STORAGE_KEY = 'skender_fin_memory_v1';
+  const MEMORY_MAX_CHARS = 2000;
+
+  function loadMemory() {
+    try {
+      return localStorage.getItem(MEMORY_STORAGE_KEY) || '';
+    } catch { return ''; }
+  }
+
+  function saveMemory(text) {
+    localStorage.setItem(MEMORY_STORAGE_KEY, text);
+  }
+
+  let advisorMemory = loadMemory();
+
+  // Timestamp globale "ultima modifica dati", aggiornato da OGNI operazione che
+  // scrive dati (conti, investimenti, immobili, spese, trasferimenti, addebiti CC
+  // maturati) — non va confuso con d.lastUpdated, che si aggiorna solo dal modal
+  // "Aggiorna dati". Serve per impedire l'import di un backup più vecchio dei dati
+  // già presenti sul dispositivo.
+  const LAST_MODIFIED_KEY = 'skender_fin_last_modified_v1';
+  function touchLastModified() {
+    localStorage.setItem(LAST_MODIFIED_KEY, new Date().toISOString());
+    syncToServerFile();
+  }
+
+  // Snapshot di contesto mercato/fiscale — raccolto via ricerca web il 04/08/2026.
+  // NON è un feed live: per aggiornarlo bisogna rifare la ricerca e modificare
+  // questo blocco a mano. Nessun connettore di mercato/fiscale è collegato,
+  // quindi il chatbot (Claude via server.py) non ha accesso a
+  // internet in tempo reale: questo blocco è l'unico contesto "esterno" che riceve.
+  const CONTEXT_AS_OF = '2026-08-04';
+  const MARKET_CONTEXT = [
+    'Tassi mutuo fisso prima casa in Italia (fonte: MutuiOnline, lug 2026): TAN medio ~3,33%, migliori offerte intorno al 3,10% (BPER). Variabile più basso ~2,40% (MPS). BCE ha mantenuto i tassi invariati a luglio 2026.',
+    'Il mutuo di Skender è fisso allo 0,8%: nettamente sotto i tassi oggi offerti sul mercato, quindi rifinanziarlo o estinguerlo anticipatamente non converrebbe rispetto a un nuovo mutuo agli attuali tassi di mercato.',
+    'Valore aggiornato dei PAC Fondo 9 e Fondo 6 (Fineco AM): non incluso qui perché le fonti online (aggregatori terzi) riportano NAV discordanti e non affidabili al 100%. Usa sempre il valore che Skender inserisce manualmente nel pannello "Aggiorna dati" (letto dalla app Fineco) come riferimento di mercato più accurato.',
+  ].join('\n- ');
+  const TAX_CONTEXT = [
+    'Limite deducibile IRPEF contributi a fondi pensione complementari (incl. Cometa) nel 2026: € 5.300/anno (era € 5.164,57 fino al 2025; aumento in vigore da luglio 2026 con effetto retroattivo su tutto l\'anno). Il TFR versato non rientra in questo limite. Fonte: Facile.it, Fondo Cometa.',
+    'Plusvalenze su fondi comuni/OICR (inclusi i PAC Fineco AM): tassate al 26% come imposta sostitutiva (12,5% sulla quota investita in titoli di Stato whitelist). Tassazione al momento di rimborso, cessione o switch.',
+    'Detrazione IRPEF interessi passivi mutuo prima casa: 19% su un massimo di € 4.000/anno di interessi (detrazione massima € 760/anno), valida se l\'immobile è adibito ad abitazione principale.',
+  ].join('\n- ');
+
+  const DEFAULTS = {
+    lastUpdated: '2026-06-16',
+    fineco: 4200,
+    bper: 2185,
+    revolut: 420,
+  };
+
+  // ===== Flussi mensili (lista dinamica) =====
+  // Ogni flusso ha: id, name, category (una delle 4 fisse sotto — necessarie
+  // perché alcuni calcoli, come lo spazio deducibile Cometa, devono sapere quali
+  // voci sono "stipendio" e quali "contributo pensione"), account (opzionale,
+  // solo informativo/testuale — NON accredita/addebita nulla sul saldo reale,
+  // esattamente come i vecchi campi fissi che sostituisce) e value (importo
+  // mensile in euro). Sostituisce i 4 campi fissi (salaryFineco, salaryBper,
+  // pensionEmp, pensionAz) con una lista che Skender può ampliare o ridurre.
+  const FLOW_STORAGE_KEY = 'skender_fin_flows_v1';
+  const FLOW_CATEGORY_LABELS = {
+    stipendio: 'Stipendio',
+    pensione_dipendente: 'Contributo Cometa dipendente',
+    pensione_azienda: 'Contributo Cometa azienda',
+    altro: 'Altro',
+  };
+
+  function migrateLegacyFlows() {
+    const existing = localStorage.getItem(FLOW_STORAGE_KEY);
+    if (existing) {
+      try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
+    }
+    let legacy = {};
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      legacy = s ? JSON.parse(s) : {};
+    } catch { legacy = {}; }
+    const list = [
+      { id: 'legacy-salary-fineco', name: 'Stipendio netto (ION Trading)', category: 'stipendio', account: 'Fineco', value: legacy.salaryFineco != null ? legacy.salaryFineco : 1769 },
+      { id: 'legacy-salary-bper', name: 'Stipendio netto (ION Trading)', category: 'stipendio', account: 'BPER', value: legacy.salaryBper != null ? legacy.salaryBper : 1000 },
+      { id: 'legacy-pension-emp', name: 'Contributo dipendente Cometa', category: 'pensione_dipendente', account: '', value: legacy.pensionEmp != null ? legacy.pensionEmp : 286 },
+      { id: 'legacy-pension-az', name: 'Contributo azienda Cometa', category: 'pensione_azienda', account: '', value: legacy.pensionAz != null ? legacy.pensionAz : 50 },
+    ];
+    localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
+    return list;
+  }
+
+  function saveFlows(list) {
+    localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let flows = migrateLegacyFlows();
+  let editingFlowId = null;
+
+  // Somma i flussi di una categoria, opzionalmente filtrati per conto (usato per
+  // lo split Fineco/BPER dello stipendio nel riepilogo). Se account è omesso,
+  // somma la categoria intera indipendentemente dal conto.
+  function sumFlowsBy(category, account) {
+    return flows
+      .filter(f => f.category === category && (account === undefined || (f.account || '') === account))
+      .reduce((s, f) => s + (f.value || 0), 0);
+  }
+
+  function loadData() {
+    let d;
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      d = s ? { ...DEFAULTS, ...JSON.parse(s) } : { ...DEFAULTS };
+    } catch { d = { ...DEFAULTS }; }
+    // Stipendio e contributi Cometa non sono più campi fissi salvati qui: sono
+    // sempre ricalcolati al volo dalla lista flows (vedi sopra), così restano
+    // coerenti anche subito dopo un add/modifica/elimina di un flusso.
+    d.salary = sumFlowsBy('stipendio');
+    d.salaryFineco = sumFlowsBy('stipendio', 'Fineco');
+    d.salaryBper = sumFlowsBy('stipendio', 'BPER');
+    d.pensionEmp = sumFlowsBy('pensione_dipendente');
+    d.pensionAz = sumFlowsBy('pensione_azienda');
+    return d;
+  }
+
+  function saveData() {
+    const d = {
+      lastUpdated: todayIsoLocal(),
+      fineco: parseFloat(document.getElementById('input-fineco').value) || 0,
+      bper: parseFloat(document.getElementById('input-bper').value) || 0,
+      revolut: parseFloat(document.getElementById('input-revolut').value) || 0,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    touchLastModified();
+    closeModal();
+    render(loadData());
+  }
+
+  function openFlowModal(id) {
+    editingFlowId = id || null;
+    const title = document.getElementById('flowModalTitle');
+    if (id) {
+      const f = flows.find(x => x.id === id);
+      if (!f) return;
+      title.textContent = '✏️ Modifica flusso mensile';
+      document.getElementById('flow-name').value = f.name;
+      document.getElementById('flow-category').value = f.category;
+      document.getElementById('flow-account').value = f.account || '';
+      document.getElementById('flow-value').value = f.value;
+    } else {
+      title.textContent = '📅 Nuovo flusso mensile';
+      document.getElementById('flow-name').value = '';
+      document.getElementById('flow-category').value = 'stipendio';
+      document.getElementById('flow-account').value = '';
+      document.getElementById('flow-value').value = '';
+    }
+    document.getElementById('flowModalOverlay').classList.add('open');
+  }
+
+  function closeFlowModal() {
+    document.getElementById('flowModalOverlay').classList.remove('open');
+    editingFlowId = null;
+  }
+
+  function saveFlow() {
+    const name = document.getElementById('flow-name').value.trim();
+    const value = parseFloat(document.getElementById('flow-value').value);
+    if (!name) { alert('Inserisci un nome per il flusso.'); return; }
+    if (isNaN(value) || value < 0) { alert('Inserisci un valore valido (maggiore o uguale a zero).'); return; }
+    const category = document.getElementById('flow-category').value;
+    const account = document.getElementById('flow-account').value;
+
+    if (editingFlowId) {
+      const f = flows.find(x => x.id === editingFlowId);
+      if (f) { f.name = name; f.category = category; f.account = account; f.value = value; }
+    } else {
+      flows.push({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name: name, category: category, account: account, value: value,
+      });
+    }
+    saveFlows(flows);
+    touchLastModified();
+    closeFlowModal();
+    renderFlows();
+    render(loadData());
+    applyFlowsDetailCollapse(false); // mostra subito il risultato dell'aggiunta/modifica
+  }
+
+  function confirmDeleteFlow(id) {
+    const f = flows.find(x => x.id === id);
+    if (!f) return;
+    if (!confirm('Eliminare il flusso "' + f.name + '" (' + fmt(f.value) + '/mese)? L\'operazione non è reversibile.')) return;
+    flows = flows.filter(x => x.id !== id);
+    saveFlows(flows);
+    touchLastModified();
+    renderFlows();
+    render(loadData());
+    applyFlowsDetailCollapse(false);
+  }
+
+  // Richiede doppia conferma esplicita, come per investimenti e immobili, prima
+  // di svuotare l'intera lista dei flussi mensili.
+  function confirmDeleteAllFlows() {
+    if (!flows.length) { alert('Non ci sono flussi mensili da eliminare.'); return; }
+    const firstOk = confirm('Stai per eliminare TUTTI i ' + flows.length + ' flussi mensili registrati. Continuare?');
+    if (!firstOk) return;
+    const secondOk = confirm('Conferma definitiva: questa operazione cancella l\'intera lista dei flussi mensili e NON può essere annullata. Procedere davvero?');
+    if (!secondOk) return;
+    flows = [];
+    saveFlows(flows);
+    touchLastModified();
+    renderFlows();
+    render(loadData());
+    applyFlowsDetailCollapse(false);
+  }
+
+  // Sezione "Dettaglio flussi": collassabile, chiusa di default (come la
+  // memoria del consulente). Lo stato scelto dall'utente resta salvato tra le
+  // sessioni.
+  const FLOWS_DETAIL_COLLAPSE_KEY = 'skender_fin_flows_detail_collapsed_v1';
+
+  function loadFlowsDetailCollapsed() {
+    try {
+      const saved = localStorage.getItem(FLOWS_DETAIL_COLLAPSE_KEY);
+      if (saved === 'true' || saved === 'false') return saved === 'true';
+    } catch {}
+    return true; // default: chiusa
+  }
+
+  function applyFlowsDetailCollapse(collapsed) {
+    const wrap = document.getElementById('flowsDetailWrap');
+    const chevron = document.getElementById('flowsDetailChevron');
+    if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
+    if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
+    try { localStorage.setItem(FLOWS_DETAIL_COLLAPSE_KEY, String(collapsed)); } catch {}
+  }
+
+  function toggleFlowsDetailCollapse() {
+    const wrap = document.getElementById('flowsDetailWrap');
+    const isCollapsed = !wrap || wrap.style.display === 'none';
+    applyFlowsDetailCollapse(!isCollapsed);
+  }
+
+  function renderFlows() {
+    const wrap = document.getElementById('flowsList');
+    if (!wrap) return;
+    if (!flows.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessun flusso mensile registrato. Usa "+" per iniziare.</div>';
+      return;
+    }
+    wrap.innerHTML = flows.map(f => {
+      const catLabel = FLOW_CATEGORY_LABELS[f.category] || f.category;
+      const sub = catLabel + (f.account ? ' · conto: ' + f.account : '');
+      return '<div class="line-item">' +
+        '<div>' +
+          '<div class="line-label">' + escapeHtml(f.name) + '</div>' +
+          '<div class="line-sublabel">' + escapeHtml(sub) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div class="line-value">' + fmt(f.value) + '/mese</div>' +
+          '<div class="investment-row-actions">' +
+            '<button class="btn-icon-sm" onclick="openFlowModal(\'' + f.id + '\')" title="Modifica">✏️</button>' +
+            '<button class="btn-icon-sm danger" onclick="confirmDeleteFlow(\'' + f.id + '\')" title="Elimina">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function fmt(n) {
+    return '€' + Math.round(n).toLocaleString('it-IT');
+  }
+
+  let chartInstance = null;
+
+  // ===== Investimenti (lista dinamica) =====
+  // Ogni investimento ha: id, name, sublabel (opz.), type ('pensione' = illiquido
+  // fino a pensionamento/fine rapporto, 'mercato' = liquido a riscatto/vendita) e
+  // value. Sostituisce i 4 campi fissi (Cometa, TFR, PAC 9, PAC 6) di prima con una
+  // lista che Skender può ampliare o ridurre liberamente.
+
+  const INVESTMENT_STORAGE_KEY = 'skender_fin_investments_v1';
+  const PENSION_COLORS = ['#2563eb', '#1d4ed8', '#1e40af', '#3b82f6'];
+  const MARKET_COLORS = ['#7c3aed', '#a855f7', '#9333ea', '#c026d3'];
+
+  // Al primo caricamento dopo l'aggiornamento, migra i 4 valori fissi che erano
+  // salvati nel record principale (STORAGE_KEY) nella nuova lista investimenti,
+  // così nessun dato di Skender va perso. Se la lista esiste già, non fa nulla.
+  function migrateLegacyInvestments() {
+    const existing = localStorage.getItem(INVESTMENT_STORAGE_KEY);
+    if (existing) {
+      try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
+    }
+    let legacy = {};
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      legacy = s ? JSON.parse(s) : {};
+    } catch { legacy = {}; }
+    const list = [
+      { id: 'legacy-cometa', name: 'Fondo Cometa', sublabel: 'Pensione complementare · agg. mag 2026', type: 'pensione', value: legacy.cometa != null ? legacy.cometa : 24027 },
+      { id: 'legacy-tfr', name: 'TFR', sublabel: 'INPS Fondo Tesoreria + azienda · da cedolino apr 2026', type: 'pensione', value: legacy.tfr != null ? legacy.tfr : 58307 },
+      { id: 'legacy-pac9', name: 'PAC Fondo 9', sublabel: 'Fineco AM · Aggressivo · IE000D52GPT0', type: 'mercato', value: legacy.pac9 != null ? legacy.pac9 : 2896 },
+      { id: 'legacy-pac6', name: 'PAC Fondo 6', sublabel: 'Fineco AM · Bilanciato · IE000KTYLDC4', type: 'mercato', value: legacy.pac6 != null ? legacy.pac6 : 2718 },
+    ];
+    localStorage.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
+    return list;
+  }
+
+  function saveInvestments(list) {
+    localStorage.setItem(INVESTMENT_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let investments = migrateLegacyInvestments();
+  let editingInvestmentId = null;
+
+  function pensionInvestments() { return investments.filter(i => i.type === 'pensione'); }
+  function marketInvestments() { return investments.filter(i => i.type === 'mercato'); }
+  function sumInvestments(list) { return list.reduce((s, i) => s + (i.value || 0), 0); }
+
+  // Documento KID/KIID allegato a un investimento di mercato: solo testo semplice
+  // (.txt/.md), letto e salvato come stringa nell'investimento stesso (persistente,
+  // non un allegato "usa e getta" come quello della chat). Il consulente AI NON lo
+  // legge automaticamente — lo alleghi tu esplicitamente a una domanda dal
+  // selettore "📄 Allega KID investimento" accanto al pulsante 📎 della chat.
+  let stagedInvestmentDoc = null; // { name, content } in attesa di salvataggio, oppure null
+
+  function onInvestmentTypeChange() {
+    const type = document.getElementById('investment-type').value;
+    document.getElementById('investmentDocumentSection').style.display = type === 'mercato' ? 'block' : 'none';
+  }
+
+  function handleInvestmentDocSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!/\.(txt|md)$/i.test(file.name)) {
+      alert('Puoi allegare solo file di testo semplice (.txt, .md). Il PDF non è supportato: il consulente AI può leggere solo testo.');
+      return;
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      alert('File troppo grande (max 2MB).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      stagedInvestmentDoc = { name: file.name, content: String(e.target.result || '') };
+      renderInvestmentDocChip();
+    };
+    reader.onerror = function() {
+      alert('Errore nella lettura del file.');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderInvestmentDocChip() {
+    const el = document.getElementById('investmentDocChip');
+    if (!stagedInvestmentDoc) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML =
+      '<span class="chat-attach-chip">📄 ' + escapeHtml(stagedInvestmentDoc.name) +
+      ' (' + stagedInvestmentDoc.content.length.toLocaleString('it-IT') + ' caratteri)' +
+      '<button onclick="removeInvestmentDoc()" title="Rimuovi documento">✕ Rimuovi</button></span>';
+  }
+
+  function removeInvestmentDoc() {
+    stagedInvestmentDoc = null;
+    renderInvestmentDocChip();
+  }
+
+  function openInvestmentModal(id) {
+    editingInvestmentId = id || null;
+    const title = document.getElementById('investmentModalTitle');
+    if (id) {
+      const inv = investments.find(i => i.id === id);
+      if (!inv) return;
+      title.textContent = '✏️ Modifica investimento';
+      document.getElementById('investment-name').value = inv.name;
+      document.getElementById('investment-sublabel').value = inv.sublabel || '';
+      document.getElementById('investment-type').value = inv.type;
+      document.getElementById('investment-value').value = inv.value;
+      stagedInvestmentDoc = inv.document || null;
+    } else {
+      title.textContent = '💼 Nuovo investimento';
+      document.getElementById('investment-name').value = '';
+      document.getElementById('investment-sublabel').value = '';
+      document.getElementById('investment-type').value = 'mercato';
+      document.getElementById('investment-value').value = '';
+      stagedInvestmentDoc = null;
+    }
+    onInvestmentTypeChange();
+    renderInvestmentDocChip();
+    document.getElementById('investmentModalOverlay').classList.add('open');
+  }
+
+  function closeInvestmentModal() {
+    document.getElementById('investmentModalOverlay').classList.remove('open');
+    editingInvestmentId = null;
+    stagedInvestmentDoc = null;
+  }
+
+  function saveInvestment() {
+    const name = document.getElementById('investment-name').value.trim();
+    const value = parseFloat(document.getElementById('investment-value').value);
+    if (!name) { alert('Inserisci un nome per l\'investimento.'); return; }
+    if (isNaN(value) || value < 0) { alert('Inserisci un valore valido (maggiore o uguale a zero).'); return; }
+    const sublabel = document.getElementById('investment-sublabel').value.trim();
+    const type = document.getElementById('investment-type').value;
+    // Il documento vale solo per gli investimenti di mercato: se il tipo è pensione,
+    // non lo salviamo anche se era rimasto in staging da una selezione precedente.
+    const document_ = type === 'mercato' ? stagedInvestmentDoc : null;
+
+    if (editingInvestmentId) {
+      const inv = investments.find(i => i.id === editingInvestmentId);
+      if (inv) {
+        inv.name = name; inv.sublabel = sublabel; inv.type = type; inv.value = value;
+        if (document_) { inv.document = document_; } else { delete inv.document; }
+      }
+    } else {
+      const entry = {
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name: name, sublabel: sublabel, type: type, value: value,
+      };
+      if (document_) entry.document = document_;
+      investments.push(entry);
+    }
+    saveInvestments(investments);
+    touchLastModified();
+    closeInvestmentModal();
+    renderInvestments();
+    render(loadData());
+  }
+
+  function confirmDeleteInvestment(id) {
+    const inv = investments.find(i => i.id === id);
+    if (!inv) return;
+    if (!confirm('Eliminare l\'investimento "' + inv.name + '" (' + fmt(inv.value) + ')? L\'operazione non è reversibile.')) return;
+    investments = investments.filter(i => i.id !== id);
+    saveInvestments(investments);
+    touchLastModified();
+    renderInvestments();
+    render(loadData());
+  }
+
+  // Richiede doppia conferma esplicita (due popup in sequenza) prima di svuotare
+  // l'intera lista, per evitare cancellazioni accidentali di tutto il patrimonio investito.
+  function confirmDeleteAllInvestments() {
+    if (!investments.length) { alert('Non ci sono investimenti da eliminare.'); return; }
+    const totalVal = sumInvestments(investments);
+    const firstOk = confirm('Stai per eliminare TUTTI i ' + investments.length + ' investimenti registrati (valore complessivo ' + fmt(totalVal) + '). Continuare?');
+    if (!firstOk) return;
+    const secondOk = confirm('Conferma definitiva: questa operazione cancella l\'intera lista investimenti e NON può essere annullata. Procedere davvero?');
+    if (!secondOk) return;
+    investments = [];
+    saveInvestments(investments);
+    touchLastModified();
+    renderInvestments();
+    render(loadData());
+  }
+
+  function renderInvestments() {
+    const wrap = document.getElementById('investmentsList');
+    if (!investments.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessun investimento registrato. Usa "+ Aggiungi" per iniziare.</div>';
+      return;
+    }
+    wrap.innerHTML = investments.map(inv => {
+      const isPension = inv.type === 'pensione';
+      const tagClass = isPension ? 'tag-pen' : 'tag-acc';
+      const tagText = isPension ? 'ILLIQUIDO' : 'LIQUIDO';
+      const valueClass = isPension ? 'blue' : 'green';
+      return '<div class="line-item">' +
+        '<div>' +
+          '<div class="line-label">' + escapeHtml(inv.name) + ' <span class="tag ' + tagClass + '">' + tagText + '</span></div>' +
+          (inv.sublabel ? '<div class="line-sublabel">' + escapeHtml(inv.sublabel) + '</div>' : '') +
+          (inv.document ? '<div class="line-sublabel">📄 ' + escapeHtml(inv.document.name) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div class="line-value ' + valueClass + '">' + fmt(inv.value) + '</div>' +
+          '<div class="investment-row-actions">' +
+            '<button class="btn-icon-sm" onclick="openInvestmentModal(\'' + inv.id + '\')" title="Modifica">✏️</button>' +
+            '<button class="btn-icon-sm danger" onclick="confirmDeleteInvestment(\'' + inv.id + '\')" title="Elimina">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    populateChatInvestmentDocSelect();
+  }
+
+  // Selettore "📄 Allega KID…" nella chat: elenca solo gli investimenti che hanno
+  // un documento salvato, e lo mette in staging come allegato chat quando scelto —
+  // esattamente come se l'utente avesse caricato quel file da disco con 📎.
+  // Nessuna inclusione automatica: il consulente lo vede solo se lo alleghi qui.
+  function populateChatInvestmentDocSelect() {
+    const sel = document.getElementById('chatInvestmentDocSelect');
+    if (!sel) return;
+    const withDocs = investments.filter(i => i.document);
+    sel.innerHTML = '<option value="">📄 Allega KID…</option>' +
+      withDocs.map(i => '<option value="' + i.id + '">' + escapeHtml(i.name) + '</option>').join('');
+    sel.style.display = withDocs.length ? '' : 'none';
+  }
+
+  function attachInvestmentDocToChat() {
+    const sel = document.getElementById('chatInvestmentDocSelect');
+    const id = sel.value;
+    if (!id) return;
+    const inv = investments.find(i => i.id === id);
+    if (!inv || !inv.document) { sel.value = ''; return; }
+    stagedAttachment = { name: inv.document.name, content: inv.document.content };
+    renderAttachmentChip();
+    sel.value = '';
+  }
+
+  // ===== Liquidità: modifica rapida singolo saldo =====
+  // Fineco, BPER e Revolut restano conti fissi (non aggiungibili/eliminabili qui):
+  // questa è solo una scorciatoia per aggiustare un saldo singolo senza aprire il
+  // modal completo "Aggiorna dati". Scrive direttamente sul record principale.
+
+  let editingAccountKey = null;
+
+  function openAccountBalanceModal(key, label) {
+    editingAccountKey = key;
+    document.getElementById('accountBalanceModalTitle').textContent = '✏️ Modifica saldo ' + label;
+    document.getElementById('accountBalanceModalLabel').textContent = label + ' – saldo (€)';
+    const d = loadData();
+    document.getElementById('account-balance-value').value = d[key];
+    document.getElementById('accountBalanceModalOverlay').classList.add('open');
+  }
+
+  function closeAccountBalanceModal() {
+    document.getElementById('accountBalanceModalOverlay').classList.remove('open');
+    editingAccountKey = null;
+  }
+
+  function saveAccountBalance() {
+    const value = parseFloat(document.getElementById('account-balance-value').value);
+    if (isNaN(value)) { alert('Inserisci un valore valido.'); return; }
+    const d = loadData();
+    d[editingAccountKey] = value;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    touchLastModified();
+    closeAccountBalanceModal();
+    render(loadData());
+  }
+
+  // ===== Immobile (lista dinamica di proprietà) =====
+  // Ogni immobile ha: id, name, sublabel (opz.), value (valore stimato della quota
+  // posseduta), mortgage (mutuo residuo collegato, 0 se nessuno). Sostituisce i campi
+  // fissi house/mortgage di prima: Skender può avere più immobili (es. quota di
+  // un secondo appartamento) ciascuno con o senza mutuo collegato.
+
+  const PROPERTY_STORAGE_KEY = 'skender_fin_properties_v1';
+  const PROPERTY_COLORS = ['#0f766e', '#0d9488', '#14b8a6', '#2dd4bf'];
+
+  function migrateLegacyProperties() {
+    const existing = localStorage.getItem(PROPERTY_STORAGE_KEY);
+    if (existing) {
+      try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
+    }
+    let legacy = {};
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      legacy = s ? JSON.parse(s) : {};
+    } catch { legacy = {}; }
+    const list = [
+      {
+        id: 'legacy-house',
+        name: 'Abitazione Via Fiorentina',
+        sublabel: '65mq + giardino 90mq · stima mercato apr 2026',
+        value: legacy.house != null ? legacy.house : 200000,
+        mortgage: legacy.mortgage != null ? legacy.mortgage : 19907,
+      },
+    ];
+    localStorage.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
+    return list;
+  }
+
+  function saveProperties(list) {
+    localStorage.setItem(PROPERTY_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let properties = migrateLegacyProperties();
+  let editingPropertyId = null;
+
+  function propertiesTotal() { return properties.reduce((s, p) => s + (p.value || 0), 0); }
+  function mortgageTotal() { return properties.reduce((s, p) => s + (p.mortgage || 0), 0); }
+
+  function openPropertyModal(id) {
+    editingPropertyId = id || null;
+    const title = document.getElementById('propertyModalTitle');
+    if (id) {
+      const p = properties.find(x => x.id === id);
+      if (!p) return;
+      title.textContent = '✏️ Modifica immobile';
+      document.getElementById('property-name').value = p.name;
+      document.getElementById('property-sublabel').value = p.sublabel || '';
+      document.getElementById('property-value').value = p.value;
+      document.getElementById('property-mortgage').value = p.mortgage || 0;
+    } else {
+      title.textContent = '🏠 Nuovo immobile';
+      document.getElementById('property-name').value = '';
+      document.getElementById('property-sublabel').value = '';
+      document.getElementById('property-value').value = '';
+      document.getElementById('property-mortgage').value = '0';
+    }
+    document.getElementById('propertyModalOverlay').classList.add('open');
+  }
+
+  function closePropertyModal() {
+    document.getElementById('propertyModalOverlay').classList.remove('open');
+    editingPropertyId = null;
+  }
+
+  function saveProperty() {
+    const name = document.getElementById('property-name').value.trim();
+    const value = parseFloat(document.getElementById('property-value').value);
+    const mortgage = parseFloat(document.getElementById('property-mortgage').value) || 0;
+    if (!name) { alert('Inserisci un nome per l\'immobile.'); return; }
+    if (isNaN(value) || value < 0) { alert('Inserisci un valore valido (maggiore o uguale a zero).'); return; }
+    if (mortgage < 0) { alert('Il mutuo residuo non può essere negativo.'); return; }
+    const sublabel = document.getElementById('property-sublabel').value.trim();
+
+    if (editingPropertyId) {
+      const p = properties.find(x => x.id === editingPropertyId);
+      if (p) { p.name = name; p.sublabel = sublabel; p.value = value; p.mortgage = mortgage; }
+    } else {
+      properties.push({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name: name, sublabel: sublabel, value: value, mortgage: mortgage,
+      });
+    }
+    saveProperties(properties);
+    touchLastModified();
+    closePropertyModal();
+    renderProperties();
+    render(loadData());
+  }
+
+  function confirmDeleteProperty(id) {
+    const p = properties.find(x => x.id === id);
+    if (!p) return;
+    if (!confirm('Eliminare l\'immobile "' + p.name + '" (' + fmt(p.value) + ')? L\'operazione non è reversibile.')) return;
+    properties = properties.filter(x => x.id !== id);
+    saveProperties(properties);
+    touchLastModified();
+    renderProperties();
+    render(loadData());
+  }
+
+  function confirmDeleteAllProperties() {
+    if (!properties.length) { alert('Non ci sono immobili da eliminare.'); return; }
+    const totalVal = propertiesTotal();
+    const firstOk = confirm('Stai per eliminare TUTTI i ' + properties.length + ' immobili registrati (valore complessivo ' + fmt(totalVal) + '). Continuare?');
+    if (!firstOk) return;
+    const secondOk = confirm('Conferma definitiva: questa operazione cancella l\'intera lista immobili e NON può essere annullata. Procedere davvero?');
+    if (!secondOk) return;
+    properties = [];
+    saveProperties(properties);
+    touchLastModified();
+    renderProperties();
+    render(loadData());
+  }
+
+  function renderProperties() {
+    const wrap = document.getElementById('propertiesList');
+    if (!properties.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessun immobile registrato. Usa "+" per aggiungerne uno.</div>';
+      return;
+    }
+    wrap.innerHTML = properties.map(p => {
+      const equity = (p.value || 0) - (p.mortgage || 0);
+      const mortgageSub = p.mortgage > 0
+        ? ' · Mutuo residuo: ' + fmt(p.mortgage) + ' · Equity: ' + fmt(equity)
+        : ' · Nessun mutuo collegato';
+      return '<div class="line-item">' +
+        '<div>' +
+          '<div class="line-label">' + escapeHtml(p.name) + ' <span class="tag tag-pen">ILLIQUIDO</span></div>' +
+          '<div class="line-sublabel">' + (p.sublabel ? escapeHtml(p.sublabel) : '') + mortgageSub + '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div class="line-value blue">' + fmt(p.value) + '</div>' +
+          '<div class="investment-row-actions">' +
+            '<button class="btn-icon-sm" onclick="openPropertyModal(\'' + p.id + '\')" title="Modifica">✏️</button>' +
+            '<button class="btn-icon-sm danger" onclick="confirmDeleteProperty(\'' + p.id + '\')" title="Elimina">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function buildReview(d) {
+    const pensionList = pensionInvestments();
+    const marketList = marketInvestments();
+    const pensionTotal = sumInvestments(pensionList);
+    const marketTotal = sumInvestments(marketList);
+    const houseTotal = propertiesTotal();
+    const mortgageTot = mortgageTotal();
+    const liquidCash = d.fineco + d.bper + d.revolut;
+    const liquidAssets = marketTotal + d.fineco + d.bper + d.revolut;
+    const totalAssets = houseTotal + pensionTotal + marketTotal + d.fineco + d.bper + d.revolut;
+    const liquidNet = liquidAssets - mortgageTot;
+    const illiquidShare = totalAssets > 0 ? ((houseTotal + pensionTotal) / totalAssets) * 100 : 0;
+    const emergencyMonths = d.salary > 0 ? liquidCash / d.salary : 0;
+    const emergencyVsMortgage = MORTGAGE_MONTHLY > 0 ? liquidCash / MORTGAGE_MONTHLY : 0;
+    const pensionAnnual = (d.pensionEmp + d.pensionAz) * 12;
+    const pensionHeadroom = PENSION_LIMIT - pensionAnnual;
+    const equity = houseTotal - mortgageTot;
+
+    const positives = [];
+    const negatives = [];
+    const short = [];
+    const medium = [];
+    const long = [];
+    const limits = [];
+
+    // Mutuo
+    if (mortgageTot > 0) {
+      positives.push('Il mutuo BPER al tasso fisso dello 0,8% è una condizione estremamente favorevole rispetto ai livelli attuali di mercato: è un debito "a buon mercato" che, nella maggior parte degli scenari, conviene mantenere fino a scadenza piuttosto che estinguere anticipatamente.');
+      long.push('Mantieni il mutuo fino a naturale scadenza: al tasso attuale (0,8%), destinare liquidità extra all\'estinzione anticipata ha quasi sempre un costo-opportunità superiore rispetto a investirla o lasciarla a cuscinetto.');
+    }
+
+    // Equity immobiliare
+    if (properties.length && equity > 0) {
+      positives.push('I tuoi immobili (' + properties.map(p => p.name).join(', ') + ') generano un\'equity netta complessiva di ' + fmt(equity) + ' (valore stimato meno mutui residui collegati): è una componente patrimoniale solida, anche se non liquidabile a breve termine.');
+    }
+
+    // Fondo di emergenza
+    if (d.salary > 0) {
+      if (emergencyMonths < 3) {
+        negatives.push('La liquidità realmente disponibile (Fineco, BPER, Revolut: ' + fmt(liquidCash) + ') copre circa ' + emergencyMonths.toFixed(1) + ' mesi del tuo stipendio netto, sotto la soglia minima di 3 mesi che considero lo standard prudenziale per chi ha un\'unica fonte di reddito da lavoro dipendente.');
+        short.push('Priorità nei prossimi mesi: portare la liquidità di emergenza ad almeno 3 mensilità nette (circa ' + fmt(d.salary * 3) + ') prima di destinare nuovo risparmio a PAC o altri investimenti.');
+      } else if (emergencyMonths > 6) {
+        negatives.push('La liquidità immediata copre ' + emergencyMonths.toFixed(1) + ' mesi di stipendio netto, oltre la soglia dei 6 mesi generalmente considerata sufficiente: il capitale in eccesso resta fermo su conti a rendimento nullo o quasi.');
+        medium.push('Valuta di spostare la liquidità oltre le 6 mensilità (circa ' + fmt(liquidCash - d.salary * 6) + ' in eccesso) verso i PAC esistenti o altri strumenti, per non lasciare capitale infruttifero.');
+      } else {
+        positives.push('Il fondo di emergenza è dimensionato correttamente: ' + emergencyMonths.toFixed(1) + ' mesi di stipendio netto in liquidità immediata, nella fascia 3-6 mesi che considero adeguata per il tuo profilo.');
+      }
+    } else {
+      limits.push('Manca il dato sullo stipendio netto: senza di esso non posso stimare correttamente il fondo di emergenza necessario.');
+    }
+
+    // Patrimonio liquido netto
+    if (liquidNet < 0) {
+      negatives.push('Il patrimonio liquido netto (liquidità + investimenti di mercato, al netto dei mutui residui) è negativo per ' + fmt(Math.abs(liquidNet)) + ': in questo momento non avresti risorse liquide sufficienti per estinguere il mutuo residuo se volessi o dovessi farlo. Non è un allarme di per sé, dato il tasso basso e la rata sostenibile, ma è un indicatore di leva da monitorare.');
+    }
+
+    // Copertura rata mutuo
+    if (mortgageTot > 0 && emergencyVsMortgage < 3) {
+      negatives.push('La liquidità immediata copre circa ' + emergencyVsMortgage.toFixed(1) + ' rate del mutuo (su una rata di ' + fmt(MORTGAGE_MONTHLY) + '/mese): un margine ridotto per assorbire un imprevisto che riduca temporaneamente il reddito.');
+    }
+
+    // Concentrazione in asset illiquidi
+    if (illiquidShare > 65) {
+      const illiquidNames = [].concat(properties.map(p => p.name), pensionList.map(i => i.name));
+      negatives.push('Il ' + illiquidShare.toFixed(0) + '% del tuo patrimonio complessivo è in asset illiquidi (' + (illiquidNames.length ? illiquidNames.join(', ') : 'immobili e pensione') + '), vincolati fino alla vendita degli immobili o al pensionamento/fine rapporto: la componente realmente flessibile del tuo patrimonio è più ridotta di quanto suggerisca il patrimonio netto totale.');
+    }
+
+    // Investimenti con valore a zero/non aggiornato
+    const zeroValueInvestments = investments.filter(i => !i.value || i.value === 0).map(i => i.name);
+    if (zeroValueInvestments.length) {
+      limits.push('Investimenti con valore a zero o non aggiornato (' + zeroValueInvestments.join(', ') + '): finché non li aggiorni dalla card "Investimenti", il calcolo di patrimonio e allocazione resta parziale.');
+    }
+    const zeroValueProperties = properties.filter(p => !p.value || p.value === 0).map(p => p.name);
+    if (zeroValueProperties.length) {
+      limits.push('Immobili con valore a zero o non aggiornato (' + zeroValueProperties.join(', ') + '): finché non li aggiorni dalla card "Immobile", il calcolo di patrimonio resta parziale.');
+    }
+
+    // Spazio deducibile Cometa
+    if (pensionHeadroom > 0) {
+      positives.push('Hai ancora ' + fmt(pensionHeadroom) + '/anno (circa ' + fmt(pensionHeadroom / 12) + '/mese) di spazio deducibile nel Fondo Cometa rispetto al limite 2026 di ' + fmt(PENSION_LIMIT) + ': un beneficio fiscale che al momento non stai sfruttando pienamente.');
+      medium.push('Se il fondo di emergenza è già adeguato, valuta di aumentare il contributo volontario a Cometa fino al limite deducibile (+' + fmt(pensionHeadroom / 12) + '/mese circa): riduce l\'imponibile IRPEF e rafforza la componente pensionistica.');
+    } else if (pensionHeadroom < 0) {
+      negatives.push('I contributi annui a Cometa (' + fmt(pensionAnnual) + ') superano il limite deducibile 2026 (' + fmt(PENSION_LIMIT) + '): la quota eccedente non genera beneficio fiscale aggiuntivo.');
+    }
+
+    // Diversificazione
+    if (marketList.length >= 2) {
+      medium.push('Hai ' + marketList.length + ' investimenti di mercato (' + marketList.map(i => i.name).join(', ') + '): verifica se la combinazione riflette davvero la tua tolleranza al rischio e se sono sufficientemente diversificati per gestore/asset class, non solo per nome.');
+    } else if (marketList.length === 1) {
+      medium.push('Hai un solo investimento di mercato (' + marketList[0].name + '): valuta se concentrare lì tutta la componente liquida investita è coerente con la tua tolleranza al rischio, o se ha senso diversificare.');
+    }
+
+    if (pensionList.length) {
+      long.push('I tuoi investimenti pensione/TFR (' + pensionList.map(i => i.name).join(', ') + ', complessivamente ' + fmt(pensionTotal) + ') restano illiquidi fino al pensionamento (67 anni) o alla fine del rapporto di lavoro: non considerarli disponibili per obiettivi a breve o medio termine, anche se contribuiscono in modo significativo al patrimonio netto totale.');
+    }
+    long.push('Con gli investimenti di mercato in fase di accumulo e l\'equity immobiliare in crescita, rivedi l\'allocazione complessiva con cadenza almeno annuale, per verificare che resti coerente con l\'orizzonte temporale e gli obiettivi (casa, pensione, liquidità).');
+
+    // Limiti dell'analisi (dati mancanti per completarla)
+    const expensesThisMonth = (typeof expenses !== 'undefined' ? expenses : []).filter(e => e.date && e.date.slice(0, 7) === currentMonthKey());
+    if (!expensesThisMonth.length) {
+      limits.push('Movimenti ricorrenti per singolo conto: sappiamo quanto entra su Fineco e BPER ogni mese (stipendio), ma non ancora quanto esce (bollette, mutuo, spese varie) né eventuali entrate extra — il registro movimenti è vuoto per il mese corrente. Qualunque proiezione di saldo futuro assume "nessuna spesa o entrata aggiuntiva oltre a quanto tracciato", quindi è una stima ottimistica, non un dato certo.');
+    } else {
+      limits.push('I saldi Fineco/BPER/Revolut qui sopra riflettono già i movimenti immediati che hai registrato (addebiti in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti — scalati o aggiunti automaticamente). Le spese a carta di credito NON sono ancora scalate, verranno addebitate il mese successivo. Il registro potrebbe comunque non essere completo se non hai inserito tutti i movimenti reali.');
+    }
+    limits.push('Orizzonte temporale e obiettivi specifici (es. cambio casa, indipendenza finanziaria, data desiderata): senza questi riferimenti non posso valutare con precisione se l\'allocazione attuale tra liquidità, PAC e immobile è coerente con i tuoi piani.');
+    limits.push('Tolleranza al rischio dichiarata: il giudizio sugli investimenti di mercato si basa solo sul nome/etichetta che hai inserito, non su un profilo di rischio validato con te.');
+    limits.push('Coperture assicurative (vita, invalidità, protezione mutuo): non tracciate in dashboard, ma rilevanti dato che hai un mutuo attivo e un reddito da lavoro dipendente come fonte primaria.');
+    limits.push('Altri debiti o asset non presenti in dashboard (carte di credito, prestiti, altri conti o immobili): l\'analisi si basa esclusivamente sui dati che hai inserito qui.');
+    limits.push('Quadro fiscale completo: lo spazio deducibile calcolato riguarda solo il Fondo Cometa; altre deduzioni, detrazioni o l\'aliquota marginale IRPEF non sono considerate.');
+
+    return { positives, negatives, short, medium, long, limits };
+  }
+
+  function renderReview(d) {
+    const r = buildReview(d);
+    const list = (items, cls) => items.length
+      ? items.map(t => '<div class="review-item ' + cls + '">' + t + '</div>').join('')
+      : '<div class="review-item">—</div>';
+
+    const html =
+      '<div class="review-section"><div class="review-section-title">✅ Cosa funziona</div>' + list(r.positives, 'pos') + '</div>' +
+      '<div class="review-section"><div class="review-section-title">⚠️ Cosa non funziona</div>' + list(r.negatives, 'neg') + '</div>' +
+      '<div class="review-section"><div class="review-section-title">📆 Breve periodo (0–6 mesi)</div>' + list(r.short, '') + '</div>' +
+      '<div class="review-section"><div class="review-section-title">📈 Medio periodo (6 mesi–2 anni)</div>' + list(r.medium, '') + '</div>' +
+      '<div class="review-section"><div class="review-section-title">🎯 Lungo periodo (2+ anni)</div>' + list(r.long, '') + '</div>' +
+      '<div class="review-section"><div class="review-section-title">📋 Limiti dell\'analisi</div>' + list(r.limits, 'limit') + '</div>' +
+      '<div class="review-disclaimer">Analisi generata automaticamente sui dati che hai inserito, in uno stile ispirato a una nota di consulenza finanziaria — non sostituisce il parere di un consulente abilitato e si ricalcola a ogni aggiornamento dati.</div>';
+
+    document.getElementById('reviewContent').innerHTML = html;
+  }
+
+  // ===== Spese =====
+
+  const EXPENSE_STORAGE_KEY = 'skender_fin_expenses_v1';
+
+  const CATEGORY_GROUPS = {
+    'Casa': ['Mutuo', 'Assicurazione casa', 'Spese condominiali', 'Manutenzione casa', 'Luce', 'Acqua', 'Gas', 'Internet e telefono', 'Spese casa Traversetolo'],
+    'Auto': ['Bollo, manutenzione e ACI', 'Assicurazione auto', 'Metano auto', 'Autostrada'],
+    'Vita quotidiana': ['Cibo', 'Ristorante', 'Pranzo ufficio', 'Vestiti', 'Spese bancarie', 'Ritiro contanti', 'Computer', 'Altro'],
+    'Tempo libero': ['TV streaming', 'Sport / palestra', 'Viaggi', 'Ferie'],
+    'Salute': ['Spese mediche'],
+    'Istruzione': ['Libri e corsi'],
+    'Tasse e burocrazia': ['Tasse (TARI, IMU, ecc.)', 'Commercialista'],
+    'Lavoro': ['Spese ION'],
+    'Investimenti': ['Spese investimento'],
+    'Varie': ['Varie'],
+  };
+
+  // Categorie per gli accrediti (denaro in entrata) — distinte da quelle di spesa,
+  // che non hanno senso per un movimento in entrata (es. "Mutuo" o "Cibo").
+  const CATEGORY_GROUPS_ENTRATE = {
+    'Entrate': ['Rimborso', 'Bonus/Premio', 'Regalo ricevuto', 'Vendita', 'Interessi/Rendimenti', 'Altro reddito'],
+  };
+
+  const MOVEMENT_LABELS = {
+    contanti: 'Contanti',
+    ritiro_contanti: 'Ritiro contanti',
+    carta_credito: 'Carta credito (mese dopo)',
+    carta_debito: 'Carta debito',
+    bonifico: 'Bonifico bancario',
+    rid: 'Addebito diretto (RID/SDD)',
+    accredito_diretto: 'Accredito diretto',
+  };
+
+  // Opzioni del menu "Tipo movimento", diverse per direzione: un accredito non può
+  // essere un "ritiro contanti" o una "carta di credito differita al mese dopo",
+  // concetti che valgono solo per un addebito.
+  const MOVEMENT_OPTIONS_ADDEBITO = [
+    ['contanti', 'Pagamento in contanti'],
+    ['ritiro_contanti', 'Ritiro in contanti'],
+    ['carta_credito', 'Carta di credito (addebito mese dopo)'],
+    ['carta_debito', 'Carta di debito'],
+    ['rid', 'Addebito diretto (RID/SDD)'],
+    ['bonifico', 'Bonifico bancario'],
+  ];
+  const MOVEMENT_OPTIONS_ACCREDITO = [
+    ['contanti', 'Contanti ricevuti'],
+    ['bonifico', 'Bonifico in entrata'],
+    ['accredito_diretto', 'Accredito diretto'],
+  ];
+
+  const ACCOUNT_KEY_MAP = { Fineco: 'fineco', BPER: 'bper', Revolut: 'revolut' };
+
+  // Data di oggi in formato locale YYYY-MM-DD, calcolata dai campi LOCALI di
+  // Date (getFullYear/getMonth/getDate) e MAI tramite toISOString(), che
+  // converte in UTC: per un fuso avanti rispetto a UTC (es. Italia, UTC+2 in
+  // estate) toISOString() può far scivolare la data indietro di un giorno,
+  // e se il giorno è l'1 del mese, indietro di un mese intero una volta
+  // combinato con calcoli su "mese dopo". Vedi nextMonthKey sotto.
+  function todayIsoLocal() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
+  function currentMonthKey() {
+    return todayIsoLocal().slice(0, 7); // YYYY-MM
+  }
+
+  // Aritmetica pura su numeri (nessun oggetto Date, nessuna conversione UTC):
+  // evita completamente il bug di fuso orario che affliggeva la versione
+  // precedente basata su Date+toISOString (una spesa datata 2026-08-01 dava
+  // "mese dopo" = 2026-08 invece di 2026-09, per chi è in un fuso UTC+).
+  function nextMonthKey(dateStr) {
+    const base = dateStr || todayIsoLocal();
+    let [y, m] = base.slice(0, 7).split('-').map(Number);
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+    return y + '-' + String(m).padStart(2, '0');
+  }
+
+  // Applica al saldo del conto le spese non a carta di credito appena inserite
+  // (deduzione immediata), oppure quelle a carta di credito il cui giorno di
+  // addebito è arrivato (deduzione differita, controllata a ogni apertura del
+  // dashboard). Ogni spesa viene scalata una sola volta (flag applied/ccApplied).
+  function adjustAccountBalance(account, delta) {
+    const key = ACCOUNT_KEY_MAP[account];
+    if (!key) return;
+    const d = loadData();
+    d[key] = (d[key] || 0) + delta;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  }
+
+  // Giorno del mese di scadenza in cui la carta di credito viene effettivamente
+  // addebitata: il 13 per il conto BPER (richiesto esplicitamente), il 1° per
+  // tutti gli altri conti (comportamento invariato di prima: appena inizia il
+  // mese di scadenza, senza soglia sul giorno).
+  function ccDueDay(account) {
+    return account === 'BPER' ? 13 : 1;
+  }
+
+  // Mese di scadenza per una spesa a carta di credito. Regola normale: un mese
+  // dopo la data della spesa (nextMonthKey). Eccezione per il conto BPER: le
+  // spese datate il 30 o il 31 del mese saltano un mese IN PIÙ, perché il ciclo
+  // di fatturazione della carta si chiude qualche giorno prima della fine del
+  // mese — una spesa del 31 luglio non chiude nel ciclo di agosto ma in quello
+  // di settembre (addebito il 13 settembre, non il 13 agosto). Per gli altri
+  // conti e per tutti gli altri giorni vale sempre la regola semplice.
+  function ccDueMonthForPurchase(dateStr, account) {
+    const due = nextMonthKey(dateStr);
+    const day = Number((dateStr || todayIsoLocal()).slice(8, 10));
+    if (account === 'BPER' && day >= 30) {
+      return nextMonthKey(due + '-01'); // salta un mese in più
+    }
+    return due;
+  }
+
+  // Data soglia completa (YYYY-MM-DD) oltre la quale una spesa carta di credito
+  // va considerata scaduta e quindi addebitata sul conto collegato.
+  function ccDueDateThreshold(entry) {
+    const dueMonth = entry.ccDueMonth || ccDueMonthForPurchase(entry.date, entry.account);
+    const day = ccDueDay(entry.account);
+    return dueMonth + '-' + String(day).padStart(2, '0');
+  }
+
+  // Migrazione una tantum: le voci carta di credito ancora in attesa (non
+  // addebitate) potrebbero avere un ccDueMonth salvato con la VECCHIA versione
+  // bacata di nextMonthKey (bug di fuso orario, vedi sopra) — es. una spesa
+  // datata il 1° del mese risultava "mese dopo" = STESSO mese invece del
+  // successivo. Le ricalcola con la formula corretta, così si autocorreggono
+  // senza dover essere cancellate e reinserite manualmente. Non tocca le voci
+  // già addebitate (ccApplied), che sono storia già chiusa.
+  function migratePendingCcDueMonths() {
+    let changed = false;
+    expenses.forEach(e => {
+      const direction = e.direction || 'addebito';
+      if (direction === 'addebito' && e.movement === 'carta_credito' && !e.ccApplied && e.date) {
+        const corrected = ccDueMonthForPurchase(e.date, e.account);
+        if (e.ccDueMonth !== corrected) {
+          e.ccDueMonth = corrected;
+          changed = true;
+        }
+      }
+    });
+    if (changed) { saveExpenses(expenses); touchLastModified(); }
+    return changed;
+  }
+
+  function applyMaturedCreditCardCharges() {
+    const todayIso = todayIsoLocal();
+    let changed = false;
+    expenses.forEach(e => {
+      const direction = e.direction || 'addebito';
+      if (direction === 'addebito' && e.movement === 'carta_credito' && !e.ccApplied) {
+        const threshold = ccDueDateThreshold(e);
+        if (todayIso >= threshold) {
+          adjustAccountBalance(e.account, -e.amount);
+          e.ccApplied = true;
+          e.ccAppliedOn = todayIso;
+          changed = true;
+        }
+      }
+    });
+    if (changed) { saveExpenses(expenses); touchLastModified(); }
+    return changed;
+  }
+
+  // Addebito automatico ricorrente della rata mutuo su BPER: dal giorno 15 di
+  // ogni mese (o alla prima apertura successiva se la dashboard non è stata
+  // aperta esattamente quel giorno), genera un vero movimento "Addebito diretto
+  // (RID/SDD)" — visibile in Movimenti, nell'analisi annuale e nell'export, come
+  // qualunque altra spesa — invece di un aggiustamento silenzioso del saldo.
+  // Genera al massimo UNA rata per mese corrente: nessun recupero retroattivo di
+  // mesi passati, per non alterare mesi già chiusi/registrati diversamente.
+  function applyRecurringMortgage() {
+    const nowKey = currentMonthKey();
+    const todayIso = todayIsoLocal();
+    const threshold = nowKey + '-15';
+    if (todayIso < threshold) return false; // non ancora il 15 di questo mese
+
+    const alreadyGenerated = expenses.some(e => e.autoMortgage && e.date && e.date.slice(0, 7) === nowKey);
+    if (alreadyGenerated) return false;
+
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      date: threshold,
+      direction: 'addebito',
+      account: 'BPER',
+      movement: 'rid',
+      category: 'Mutuo',
+      description: 'Rata mutuo (generata automaticamente)',
+      amount: MORTGAGE_MONTHLY,
+      autoMortgage: true,
+    };
+
+    adjustAccountBalance('BPER', -MORTGAGE_MONTHLY);
+    expenses.push(entry);
+    expenses.sort((a, b) => b.date.localeCompare(a.date));
+    saveExpenses(expenses);
+    touchLastModified();
+    return true;
+  }
+
+  function loadExpenses() {
+    try {
+      const s = localStorage.getItem(EXPENSE_STORAGE_KEY);
+      return s ? JSON.parse(s) : [];
+    } catch { return []; }
+  }
+
+  function saveExpenses(list) {
+    localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let expenses = loadExpenses();
+
+  function populateCategorySelect(direction) {
+    const groups = direction === 'accredito' ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
+    const sel = document.getElementById('expense-category');
+    sel.innerHTML = Object.entries(groups).map(([group, cats]) =>
+      '<optgroup label="' + group + '">' +
+      cats.map(c => '<option value="' + c + '">' + c + '</option>').join('') +
+      '</optgroup>'
+    ).join('');
+    onExpenseCategoryChange();
+  }
+
+  // Mostra il campo "Necessità" (Necessaria / Discrezionale) solo per i movimenti
+  // in addebito di categoria "Varie": per tutte le altre categorie il tipo di
+  // spesa è già implicito (es. "Mutuo", "Cibo") e il campo resta nascosto e
+  // non valorizzato. Richiamata sia al cambio di Categoria sia ogni volta che
+  // la select viene ripopolata (cambio Direzione, apertura modal).
+  function onExpenseCategoryChange() {
+    const cat = document.getElementById('expense-category').value;
+    const direction = document.getElementById('expense-direction').value;
+    const row = document.getElementById('expense-necessity-row');
+    const isVarie = direction === 'addebito' && cat === 'Varie';
+    row.style.display = isVarie ? 'flex' : 'none';
+    if (!isVarie) document.getElementById('expense-necessity').value = '';
+  }
+
+  function populateMovementSelect(direction) {
+    const opts = direction === 'accredito' ? MOVEMENT_OPTIONS_ACCREDITO : MOVEMENT_OPTIONS_ADDEBITO;
+    const sel = document.getElementById('expense-movement');
+    sel.innerHTML = opts.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('');
+  }
+
+  // Richiamata quando l'utente cambia Direzione nel modal: aggiorna sia le opzioni
+  // di Tipo movimento sia quelle di Categoria, che sono diverse tra addebito e accredito.
+  function onExpenseDirectionChange() {
+    const direction = document.getElementById('expense-direction').value;
+    populateMovementSelect(direction);
+    populateCategorySelect(direction);
+  }
+
+  function openExpenseModal() {
+    document.getElementById('expense-direction').value = 'addebito';
+    populateMovementSelect('addebito');
+    populateCategorySelect('addebito');
+    document.getElementById('expense-date').value = todayIsoLocal();
+    document.getElementById('expense-account').value = 'Fineco';
+    document.getElementById('expense-movement').value = 'carta_debito';
+    document.getElementById('expense-description').value = '';
+    document.getElementById('expense-amount').value = '';
+    document.getElementById('expense-necessity').value = '';
+    document.getElementById('expenseModalOverlay').classList.add('open');
+  }
+
+  function closeExpenseModal() {
+    document.getElementById('expenseModalOverlay').classList.remove('open');
+  }
+
+  function addExpense() {
+    const amount = parseFloat(document.getElementById('expense-amount').value);
+    if (!amount || amount <= 0) {
+      alert('Inserisci un importo valido maggiore di zero.');
+      return;
+    }
+    const date = document.getElementById('expense-date').value || todayIsoLocal();
+    const account = document.getElementById('expense-account').value;
+    const direction = document.getElementById('expense-direction').value === 'accredito' ? 'accredito' : 'addebito';
+    const movement = document.getElementById('expense-movement').value;
+    const category = document.getElementById('expense-category').value;
+
+    // Per i movimenti in addebito di categoria "Varie" la distinzione tra spesa
+    // necessaria e discrezionale è obbligatoria: senza è una voce troppo generica
+    // per essere utile in un'analisi successiva.
+    const isVarie = direction === 'addebito' && category === 'Varie';
+    const necessity = document.getElementById('expense-necessity').value;
+    if (isVarie && !necessity) {
+      alert('Per la categoria "Varie" indica se la spesa è Necessaria o Discrezionale.');
+      return;
+    }
+
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      date: date,
+      direction: direction,
+      account: account,
+      movement: movement,
+      category: category,
+      description: document.getElementById('expense-description').value.trim(),
+      amount: amount,
+    };
+    if (isVarie) entry.necessity = necessity;
+
+    if (direction === 'addebito' && movement === 'carta_credito') {
+      // Non scalata subito: verrà addebitata automaticamente il mese successivo
+      // (o due mesi dopo per spese BPER del 30/31, vedi ccDueMonthForPurchase).
+      entry.ccApplied = false;
+      entry.ccDueMonth = ccDueMonthForPurchase(date, account);
+    } else {
+      // Addebiti (contanti, ritiro contanti, carta di debito, bonifico): scalati
+      // subito. Accrediti: aggiunti subito, sempre immediati.
+      adjustAccountBalance(account, direction === 'accredito' ? amount : -amount);
+    }
+
+    expenses.push(entry);
+    expenses.sort((a, b) => b.date.localeCompare(a.date));
+    saveExpenses(expenses);
+    touchLastModified();
+    closeExpenseModal();
+    render(loadData());
+    renderExpenses();
+    renderAnnualAnalysis();
+  }
+
+  function deleteExpense(id) {
+    const entry = expenses.find(e => e.id === id);
+    if (entry) {
+      const direction = entry.direction || 'addebito';
+      if (direction === 'accredito') {
+        // Era stato aggiunto subito al saldo: va sottratto per stornarlo.
+        adjustAccountBalance(entry.account, -entry.amount);
+      } else {
+        const alreadyDeducted = entry.movement !== 'carta_credito' || entry.ccApplied === true;
+        if (alreadyDeducted) {
+          // Storna l'importo: la spesa era già stata scalata dal saldo.
+          adjustAccountBalance(entry.account, entry.amount);
+        }
+      }
+    }
+    expenses = expenses.filter(e => e.id !== id);
+    saveExpenses(expenses);
+    touchLastModified();
+    render(loadData());
+    renderExpenses();
+    renderAnnualAnalysis();
+  }
+
+  // Legge il valore corrente dei 5 controlli filtro e restituisce il sottoinsieme
+  // di `expenses` che li soddisfa TUTTI contemporaneamente (AND, non OR). Un
+  // filtro con valore vuoto ('') non esclude nulla.
+  function getFilteredExpenses() {
+    const month = document.getElementById('filter-month').value;
+    const year = document.getElementById('filter-year').value;
+    const account = document.getElementById('filter-account').value;
+    const direction = document.getElementById('filter-direction').value;
+    const category = document.getElementById('filter-category').value;
+    return expenses.filter(e => {
+      if (year && e.date.slice(0, 4) !== year) return false;
+      if (month && e.date.slice(5, 7) !== month) return false;
+      if (account && e.account !== account) return false;
+      if (direction && (e.direction || 'addebito') !== direction) return false;
+      if (category && e.category !== category) return false;
+      return true;
+    });
+  }
+
+  function isAnyExpenseFilterActive() {
+    return ['filter-month', 'filter-year', 'filter-account', 'filter-direction', 'filter-category']
+      .some(id => document.getElementById(id).value !== '');
+  }
+
+  function applyExpenseFilters() {
+    renderExpenseTable();
+  }
+
+  function resetExpenseFilters() {
+    ['filter-month', 'filter-year', 'filter-account', 'filter-direction', 'filter-category']
+      .forEach(id => { document.getElementById(id).value = ''; });
+    renderExpenseTable();
+  }
+
+  // Popola le opzioni di Anno e Categoria in base ai dati effettivamente presenti
+  // (non a un elenco fisso), preservando la selezione corrente se ancora valida —
+  // richiamata a ogni render così le liste restano aggiornate quando si aggiungono
+  // o cancellano movimenti, senza perdere il filtro che l'utente ha già impostato.
+  function populateExpenseFilters() {
+    const yearSel = document.getElementById('filter-year');
+    const prevYear = yearSel.value;
+    const years = getAvailableYears();
+    yearSel.innerHTML = '<option value="">Tutti gli anni</option>' +
+      years.map(y => '<option value="' + y + '">' + y + '</option>').join('');
+    yearSel.value = years.includes(prevYear) ? prevYear : '';
+
+    const catSel = document.getElementById('filter-category');
+    const prevCat = catSel.value;
+    const usedCategories = Array.from(new Set(expenses.map(e => e.category).filter(Boolean))).sort();
+    catSel.innerHTML = '<option value="">Tutte le categorie</option>' +
+      usedCategories.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+    catSel.value = usedCategories.includes(prevCat) ? prevCat : '';
+  }
+
+  // Costruisce la tabella Movimenti in base ai filtri attivi (o tutti i movimenti,
+  // se nessun filtro è impostato) e mostra un riepilogo Entrate/Uscite/Netto del
+  // sottoinsieme filtrato — visibile solo quando almeno un filtro è attivo, per
+  // non duplicare le card "mese corrente" quando si sta guardando tutto.
+  function renderExpenseTable() {
+    const filtered = getFilteredExpenses();
+    const filtersActive = isAnyExpenseFilterActive();
+
+    if (!expenses.length) {
+      document.querySelector('.expense-table-wrap').innerHTML = '<div class="expense-empty">Nessun movimento registrato. Usa "+ Aggiungi movimentazione" per iniziare a tracciarli.</div>';
+    } else if (!filtered.length) {
+      document.querySelector('.expense-table-wrap').innerHTML = '<div class="expense-empty">Nessun movimento corrisponde ai filtri selezionati.</div>';
+    } else {
+      document.querySelector('.expense-table-wrap').innerHTML =
+        '<table class="expense-table"><thead><tr><th>Data</th><th>Conto</th><th>Categoria / Descrizione</th><th>Movimento</th><th style="text-align:right;">Importo</th><th></th></tr></thead><tbody id="expenseTableBody"></tbody></table>';
+      document.getElementById('expenseTableBody').innerHTML = filtered.map(e => {
+        const direction = e.direction || 'addebito';
+        const isCredit = direction === 'accredito';
+        const amountClass = isCredit ? 'expense-amount credit' : 'expense-amount';
+        const amountPrefix = isCredit ? '+' : '−';
+        const necessityLabel = e.necessity === 'necessaria' ? '🔧 Necessaria'
+          : e.necessity === 'discrezionale' ? '🎯 Discrezionale' : '';
+        return '<tr>' +
+        '<td>' + e.date + '</td>' +
+        '<td><span class="expense-account-tag">' + e.account + '</span></td>' +
+        '<td>' + escapeHtml(e.category) +
+          (e.description ? '<div class="expense-desc-sub">' + escapeHtml(e.description) + '</div>' : '') +
+          (necessityLabel ? '<div class="expense-desc-sub">' + necessityLabel + '</div>' : '') +
+        '</td>' +
+        '<td>' + (MOVEMENT_LABELS[e.movement] || e.movement) +
+          (direction === 'addebito' && e.movement === 'carta_credito'
+            ? '<div class="expense-desc-sub">' + (e.ccApplied ? '✓ addebitato' : '⏳ da addebitare ' + (e.ccDueMonth || '')) + '</div>'
+            : '') +
+        '</td>' +
+        '<td class="' + amountClass + '">' + amountPrefix + fmt(e.amount) + '</td>' +
+        '<td><button class="btn-del-expense" onclick="deleteExpense(\'' + e.id + '\')" title="Elimina">✕</button></td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    const summaryEl = document.getElementById('expenseFilterSummary');
+    if (!filtersActive) {
+      summaryEl.style.display = 'none';
+      summaryEl.innerHTML = '';
+    } else {
+      const uscite = filtered.filter(e => (e.direction || 'addebito') === 'addebito').reduce((s, e) => s + e.amount, 0);
+      const entrate = filtered.filter(e => e.direction === 'accredito').reduce((s, e) => s + e.amount, 0);
+      const netto = entrate - uscite;
+      summaryEl.style.display = 'flex';
+      summaryEl.innerHTML =
+        '<span>Filtro attivo — ' + filtered.length + ' movimenti</span>' +
+        '<span>Entrate: <strong style="color:var(--green)">' + fmt(entrate) + '</strong></span>' +
+        '<span>Uscite: <strong>' + fmt(uscite) + '</strong></span>' +
+        '<span>Netto: <strong style="color:' + (netto >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (netto >= 0 ? '+' : '') + fmt(netto) + '</strong></span>';
+    }
+  }
+
+  function renderExpenses() {
+    populateExpenseFilters();
+    renderExpenseTable();
+
+    // Summary mese corrente: uscite (addebiti), entrate (accrediti) e netto separati.
+    const mk = currentMonthKey();
+    const thisMonth = expenses.filter(e => e.date.slice(0, 7) === mk);
+    const uscite = thisMonth.filter(e => (e.direction || 'addebito') === 'addebito');
+    const entrate = thisMonth.filter(e => e.direction === 'accredito');
+    const totalUscite = uscite.reduce((s, e) => s + e.amount, 0);
+    const totalEntrate = entrate.reduce((s, e) => s + e.amount, 0);
+    const netto = totalEntrate - totalUscite;
+    const byAccount = {};
+    thisMonth.forEach(e => { byAccount[e.account] = (byAccount[e.account] || 0) + e.amount; });
+    const topAccount = Object.entries(byAccount).sort((a, b) => b[1] - a[1])[0];
+    const byCategory = {};
+    uscite.forEach(e => { byCategory[e.category] = (byCategory[e.category] || 0) + e.amount; });
+    const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0];
+
+    document.getElementById('expenseSummary').innerHTML =
+      '<div class="expense-summary-item"><div class="expense-summary-label">Uscite mese corrente</div><div class="expense-summary-value">' + fmt(totalUscite) + '</div></div>' +
+      '<div class="expense-summary-item"><div class="expense-summary-label">Netto mese corrente</div><div class="expense-summary-value" style="color:' + (netto >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (netto >= 0 ? '+' : '') + fmt(netto) + '</div></div>' +
+      '<div class="expense-summary-item"><div class="expense-summary-label">Conto più utilizzato</div><div class="expense-summary-value">' + (topAccount ? topAccount[0] + ' (' + fmt(topAccount[1]) + ')' : '—') + '</div></div>' +
+      '<div class="expense-summary-item"><div class="expense-summary-label">Categoria principale (uscite)</div><div class="expense-summary-value" style="font-size:12px;">' + (topCategory ? topCategory[0] + ' (' + fmt(topCategory[1]) + ')' : '—') + '</div></div>';
+
+    renderMovementBreakdown(uscite, totalUscite);
+  }
+
+  function computeMovementBreakdown(thisMonthExpenses) {
+    const byMovement = {};
+    thisMonthExpenses.forEach(e => { byMovement[e.movement] = (byMovement[e.movement] || 0) + e.amount; });
+    const total = thisMonthExpenses.reduce((s, e) => s + e.amount, 0);
+    return Object.entries(byMovement)
+      .map(([mv, amount]) => ({
+        key: mv,
+        label: MOVEMENT_LABELS[mv] || mv,
+        amount: amount,
+        pct: total > 0 ? (amount / total) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }
+
+  function renderMovementBreakdown(thisMonth, totalMonth) {
+    const el = document.getElementById('expenseMovementBreakdown');
+    const rows = computeMovementBreakdown(thisMonth);
+    if (!rows.length) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML =
+      '<div class="movement-breakdown-title">Ripartizione uscite per tipo di pagamento (mese corrente)</div>' +
+      rows.map(r =>
+        '<div class="movement-row">' +
+        '<div class="movement-row-label">' + r.label + '</div>' +
+        '<div class="movement-row-bar-wrap"><div class="movement-row-bar" style="width:' + r.pct.toFixed(0) + '%"></div></div>' +
+        '<div class="movement-row-value">' + fmt(r.amount) + ' (' + r.pct.toFixed(0) + '%)</div>' +
+        '</div>'
+      ).join('');
+  }
+
+  function formatExpensesSummary(expenseList) {
+    const mk = currentMonthKey();
+    const thisMonth = expenseList.filter(e => e.date.slice(0, 7) === mk);
+    if (!thisMonth.length) {
+      return 'Nessun movimento registrato nel mese corrente nel registro movimenti: qualunque proiezione di saldo futuro deve assumere "nessuna spesa o entrata aggiuntiva oltre a quanto tracciato" e va dichiarato esplicitamente.';
+    }
+    const uscite = thisMonth.filter(e => (e.direction || 'addebito') === 'addebito');
+    const entrate = thisMonth.filter(e => e.direction === 'accredito');
+    const totalUscite = uscite.reduce((s, e) => s + e.amount, 0);
+    const totalEntrate = entrate.reduce((s, e) => s + e.amount, 0);
+    const byAccount = {};
+    thisMonth.forEach(e => {
+      const sign = e.direction === 'accredito' ? 1 : -1;
+      byAccount[e.account] = (byAccount[e.account] || 0) + sign * e.amount;
+    });
+    const byCategory = {};
+    uscite.forEach(e => { byCategory[e.category] = (byCategory[e.category] || 0) + e.amount; });
+    const topCategories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([c, v]) => c + ': ' + fmt(v)).join(', ');
+    const pendingCC = uscite.filter(e => e.movement === 'carta_credito' && !e.ccApplied).reduce((s, e) => s + e.amount, 0);
+    const appliedCC = uscite.filter(e => e.movement === 'carta_credito' && e.ccApplied).reduce((s, e) => s + e.amount, 0);
+    const movementBreakdown = computeMovementBreakdown(uscite)
+      .map(r => r.label + ': ' + fmt(r.amount) + ' (' + r.pct.toFixed(0) + '%)').join(', ');
+
+    return [
+      'Movimenti registrati nel mese corrente (' + mk + '): uscite totali ' + fmt(totalUscite) + ' su ' + uscite.length + ' movimenti, entrate totali ' + fmt(totalEntrate) + ' su ' + entrate.length + ' movimenti (netto ' + fmt(totalEntrate - totalUscite) + ').',
+      'Variazione netta per conto nel mese (entrate - uscite): ' + Object.entries(byAccount).map(([a, v]) => a + ' ' + fmt(v)).join(', ') + '.',
+      'Categorie di spesa principali (solo uscite): ' + (topCategories || 'nessuna') + '.',
+      'Ripartizione uscite per tipo di pagamento: ' + (movementBreakdown || 'nessuna') + '.',
+      'I saldi Fineco/BPER/Revolut mostrati sopra sono GIÀ AGGIORNATI con i movimenti immediati (uscite in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti), scalati o aggiunti automaticamente al momento dell\'inserimento.',
+      pendingCC > 0 ? ('Di cui ' + fmt(pendingCC) + ' pagati con carta di credito questo mese: NON ancora scalati dal saldo, verranno addebitati automaticamente il mese successivo.') : '',
+      appliedCC > 0 ? ('Di cui ' + fmt(appliedCC) + ' addebiti carta di credito già applicati al saldo in mesi precedenti.') : '',
+      'Questi dati coprono solo i movimenti che Skender ha inserito manualmente: potrebbero non essere completi rispetto alle uscite ed entrate reali del mese.',
+    ].filter(Boolean).join('\n');
+  }
+
+  // ===== Analisi annuale movimenti — flusso netto (confronto tra anni) =====
+  // Confronta il flusso netto mensile (entrate - uscite, gennaio-dicembre) tra più
+  // anni, così Skender può vedere trend e differenze anno su anno. Basata solo sul
+  // registro movimenti.
+
+  const ANNUAL_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0f766e'];
+  const MONTH_LABELS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+  let annualChartInstance = null;
+  let selectedYears = new Set();
+
+  function getAvailableYears() {
+    const years = new Set();
+    expenses.forEach(e => { if (e.date) years.add(e.date.slice(0, 4)); });
+    years.add(String(new Date().getFullYear()));
+    return Array.from(years).sort();
+  }
+
+  function toggleAnnualYear(y) {
+    if (selectedYears.has(y)) {
+      if (selectedYears.size > 1) selectedYears.delete(y);
+    } else {
+      selectedYears.add(y);
+    }
+    renderAnnualAnalysis();
+  }
+
+  function computeMonthlyTotalsForYear(year) {
+    const totals = new Array(12).fill(0);
+    expenses.forEach(e => {
+      if (e.date && e.date.slice(0, 4) === year) {
+        const monthIdx = parseInt(e.date.slice(5, 7), 10) - 1;
+        if (monthIdx >= 0 && monthIdx < 12) {
+          const direction = e.direction || 'addebito';
+          totals[monthIdx] += direction === 'accredito' ? e.amount : -e.amount;
+        }
+      }
+    });
+    return totals;
+  }
+
+  function renderAnnualAnalysis() {
+    const years = getAvailableYears();
+    if (selectedYears.size === 0) {
+      years.slice(-3).forEach(y => selectedYears.add(y));
+    }
+    document.getElementById('annualYearSelect').innerHTML = years.map(y =>
+      '<button type="button" class="annual-year-chip' + (selectedYears.has(y) ? ' active' : '') + '" onclick="toggleAnnualYear(\'' + y + '\')">' + y + '</button>'
+    ).join('');
+
+    const activeYears = years.filter(y => selectedYears.has(y));
+
+    if (annualChartInstance) { annualChartInstance.destroy(); annualChartInstance = null; }
+    annualChartInstance = new Chart(document.getElementById('annualChart'), {
+      type: 'bar',
+      data: {
+        labels: MONTH_LABELS_IT,
+        datasets: activeYears.map((y, i) => ({
+          label: y,
+          data: computeMonthlyTotalsForYear(y),
+          backgroundColor: ANNUAL_COLORS[i % ANNUAL_COLORS.length],
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmt(ctx.raw) } },
+        },
+        scales: {
+          y: { ticks: { callback: v => fmt(v) } },
+        },
+      },
+    });
+
+    const rows = activeYears.map(y => {
+      const totals = computeMonthlyTotalsForYear(y);
+      const total = totals.reduce((s, v) => s + v, 0);
+      const monthsWithData = totals.filter(v => v !== 0).length;
+      return { year: y, total: total, avg: monthsWithData > 0 ? total / monthsWithData : 0 };
+    });
+
+    let tableHtml = '<table class="annual-table"><thead><tr><th>Anno</th><th style="text-align:right;">Netto</th><th style="text-align:right;">Media netta/mese attivo</th><th style="text-align:right;">Var. vs anno prec. (in questa selezione)</th></tr></thead><tbody>';
+    rows.forEach((r, idx) => {
+      const prev = idx > 0 ? rows[idx - 1] : null;
+      let deltaHtml = '—';
+      if (prev && prev.total > 0) {
+        const deltaPct = ((r.total - prev.total) / prev.total) * 100;
+        const cls = deltaPct > 0 ? 'pos' : (deltaPct < 0 ? 'neg' : '');
+        deltaHtml = '<span class="annual-delta ' + cls + '">' + (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%</span>';
+      }
+      tableHtml += '<tr><td>' + r.year + '</td><td class="num">' + fmt(r.total) + '</td><td class="num">' + fmt(r.avg) + '</td><td class="num">' + deltaHtml + '</td></tr>';
+    });
+    tableHtml += '</tbody></table>';
+    document.getElementById('annualTableWrap').innerHTML = tableHtml;
+  }
+
+  // ===== Trasferimenti tra conti =====
+  // Un trasferimento sposta denaro tra i conti propri di Skender: scala il conto
+  // di partenza e accredita quello di arrivo, patrimonio netto invariato.
+  // Diverso da una spesa (che riduce il patrimonio) o da un accredito stipendio.
+
+  const TRANSFER_STORAGE_KEY = 'skender_fin_transfers_v1';
+
+  function loadTransfers() {
+    try {
+      const s = localStorage.getItem(TRANSFER_STORAGE_KEY);
+      return s ? JSON.parse(s) : [];
+    } catch { return []; }
+  }
+
+  function saveTransfers(list) {
+    localStorage.setItem(TRANSFER_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let transfers = loadTransfers();
+
+  function openTransferModal() {
+    document.getElementById('transfer-date').value = todayIsoLocal();
+    document.getElementById('transfer-from').value = 'BPER';
+    document.getElementById('transfer-to').value = 'Fineco';
+    document.getElementById('transfer-amount').value = '';
+    document.getElementById('transfer-description').value = '';
+    document.getElementById('transferModalOverlay').classList.add('open');
+  }
+
+  function closeTransferModal() {
+    document.getElementById('transferModalOverlay').classList.remove('open');
+  }
+
+  function addTransfer() {
+    const amount = parseFloat(document.getElementById('transfer-amount').value);
+    const from = document.getElementById('transfer-from').value;
+    const to = document.getElementById('transfer-to').value;
+    if (!amount || amount <= 0) {
+      alert('Inserisci un importo valido maggiore di zero.');
+      return;
+    }
+    if (from === to) {
+      alert('Il conto di partenza e quello di destinazione devono essere diversi.');
+      return;
+    }
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      date: document.getElementById('transfer-date').value || todayIsoLocal(),
+      from: from,
+      to: to,
+      amount: amount,
+      description: document.getElementById('transfer-description').value.trim(),
+    };
+    adjustAccountBalance(from, -amount);
+    adjustAccountBalance(to, amount);
+    transfers.push(entry);
+    transfers.sort((a, b) => b.date.localeCompare(a.date));
+    saveTransfers(transfers);
+    touchLastModified();
+    closeTransferModal();
+    render(loadData());
+    renderTransfers();
+  }
+
+  function deleteTransfer(id) {
+    const entry = transfers.find(t => t.id === id);
+    if (entry) {
+      // Storna entrambe le gambe del movimento.
+      adjustAccountBalance(entry.to, -entry.amount);
+      adjustAccountBalance(entry.from, entry.amount);
+    }
+    transfers = transfers.filter(t => t.id !== id);
+    saveTransfers(transfers);
+    touchLastModified();
+    render(loadData());
+    renderTransfers();
+  }
+
+  function renderTransfers() {
+    const wrap = document.getElementById('transferTableWrap');
+    if (!transfers.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessun trasferimento registrato.</div>';
+      return;
+    }
+    wrap.innerHTML =
+      '<table class="expense-table"><thead><tr><th>Data</th><th>Movimento</th><th>Descrizione</th><th style="text-align:right;">Importo</th><th></th></tr></thead><tbody>' +
+      transfers.map(t =>
+        '<tr>' +
+        '<td>' + t.date + '</td>' +
+        '<td class="transfer-route">' + t.from + '<span class="transfer-arrow"> → </span>' + t.to + '</td>' +
+        '<td>' + (t.description ? escapeHtml(t.description) : '<span class="expense-desc-sub">—</span>') + '</td>' +
+        '<td class="transfer-amount">' + fmt(t.amount) + '</td>' +
+        '<td><button class="btn-del-expense" onclick="deleteTransfer(\'' + t.id + '\')" title="Elimina">✕</button></td>' +
+        '</tr>'
+      ).join('') +
+      '</tbody></table>';
+  }
+
+  function formatTransfersSummary(list) {
+    const mk = currentMonthKey();
+    const thisMonth = list.filter(t => t.date && t.date.slice(0, 7) === mk);
+    if (!thisMonth.length) return 'Nessun trasferimento tra conti registrato nel mese corrente.';
+    return 'Trasferimenti tra conti nel mese corrente: ' + thisMonth.map(t =>
+      t.date + ' ' + t.from + '→' + t.to + ' ' + fmt(t.amount)
+    ).join('; ') + '. Questi movimenti spostano liquidità tra i tuoi conti ma NON riducono il patrimonio netto.';
+  }
+
+  // ===== Export dati (CSV apribile in Excel) =====
+  // Due modalità, in due file diversi perché le due esigenze sono in conflitto:
+  // - Report: leggibile da umano (etichette italiane, frasi composite), NON pensato
+  //   per essere riletto dal codice.
+  // - Backup: campi grezzi esatti (stessi nomi/valori usati internamente), con un
+  //   marker di versione e un timestamp, pensato per essere reimportato con
+  //   "📤 Importa backup" e ricreare esattamente il contenuto della dashboard.
+  // Entrambi usano ; come separatore e un BOM UTF-8 in testa, così Excel in
+  // italiano apre il file senza sfasare le colonne o storpiare gli accenti.
+  // Nessuno dei due include la cronologia della chat: non è un dato di base.
+
+  const BACKUP_FORMAT_MARKER = 'DASHBOARD_BACKUP';
+  const BACKUP_FORMAT_VERSION = 'v1';
+
+  function csvEscape(val) {
+    const s = (val === null || val === undefined) ? '' : String(val);
+    if (/[;"\n\r]/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function csvRow(fields) {
+    return fields.map(csvEscape).join(';');
+  }
+
+  function downloadCsvFile(rows, filenamePrefix) {
+    const csvContent = '﻿' + rows.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filenamePrefix + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function openExportChoiceModal() {
+    document.getElementById('exportChoiceModalOverlay').classList.add('open');
+  }
+
+  function closeExportChoiceModal() {
+    document.getElementById('exportChoiceModalOverlay').classList.remove('open');
+  }
+
+  function exportReport() {
+    const d = loadData();
+    const rows = [];
+
+    rows.push(csvRow(['Dashboard Finanziaria Skender – Report']));
+    rows.push(csvRow(['Generato il', new Date().toISOString().slice(0, 10)]));
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'CONTI (Liquidità)']));
+    rows.push(csvRow(['Conto', 'Saldo (€)']));
+    rows.push(csvRow(['Fineco', d.fineco]));
+    rows.push(csvRow(['BPER', d.bper]));
+    rows.push(csvRow(['Revolut', d.revolut]));
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'INVESTIMENTI']));
+    rows.push(csvRow(['Nome', 'Sotto-etichetta', 'Tipo', 'Valore (€)']));
+    investments.forEach(inv => {
+      rows.push(csvRow([
+        inv.name,
+        inv.sublabel || '',
+        inv.type === 'pensione' ? 'Pensione/TFR (illiquido)' : 'Investimento di mercato (liquido)',
+        inv.value,
+      ]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'IMMOBILI']));
+    rows.push(csvRow(['Nome', 'Sotto-etichetta', 'Valore stimato (€)', 'Mutuo residuo (€)', 'Equity (€)']));
+    properties.forEach(p => {
+      rows.push(csvRow([p.name, p.sublabel || '', p.value, p.mortgage || 0, (p.value || 0) - (p.mortgage || 0)]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'MOVIMENTI']));
+    rows.push(csvRow(['Data', 'Direzione', 'Conto', 'Categoria', 'Necessità', 'Descrizione', 'Tipo movimento', 'Importo (€)', 'Stato carta di credito']));
+    expenses.forEach(e => {
+      const direction = e.direction === 'accredito' ? 'Accredito' : 'Addebito';
+      const ccStatus = (direction === 'Addebito' && e.movement === 'carta_credito')
+        ? (e.ccApplied ? 'Addebitato il ' + (e.ccAppliedOn || '') : 'In attesa, addebito previsto ' + (e.ccDueMonth || ''))
+        : '';
+      const necessityLabel = e.necessity === 'necessaria' ? 'Necessaria' : e.necessity === 'discrezionale' ? 'Discrezionale' : '';
+      rows.push(csvRow([e.date, direction, e.account, e.category, necessityLabel, e.description || '', MOVEMENT_LABELS[e.movement] || e.movement, e.amount, ccStatus]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'TRASFERIMENTI TRA CONTI']));
+    rows.push(csvRow(['Data', 'Da conto', 'A conto', 'Importo (€)', 'Descrizione']));
+    transfers.forEach(t => {
+      rows.push(csvRow([t.date, t.from, t.to, t.amount, t.description || '']));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'FLUSSI MENSILI']));
+    rows.push(csvRow(['Nome', 'Categoria', 'Conto', 'Valore (€)']));
+    flows.forEach(f => {
+      rows.push(csvRow([f.name, FLOW_CATEGORY_LABELS[f.category] || f.category, f.account || '', f.value]));
+    });
+    rows.push('');
+    rows.push(csvRow(['Totale stipendio/mese', d.salary]));
+    rows.push(csvRow(['Totale contributi Cometa/mese', d.pensionEmp + d.pensionAz]));
+    rows.push('');
+
+    rows.push(csvRow(['Ultimo aggiornamento manuale dati', d.lastUpdated]));
+
+    downloadCsvFile(rows, 'dashboard-skender-report');
+  }
+
+  function exportBackup() {
+    const d = loadData();
+    const rows = [];
+
+    rows.push(csvRow([BACKUP_FORMAT_MARKER, BACKUP_FORMAT_VERSION]));
+    rows.push(csvRow(['Generato il', new Date().toISOString()]));
+    rows.push(csvRow(['Ultima modifica dati', localStorage.getItem(LAST_MODIFIED_KEY) || (d.lastUpdated + 'T00:00:00.000Z')]));
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'CONTI']));
+    rows.push(csvRow(['key', 'value']));
+    rows.push(csvRow(['fineco', d.fineco]));
+    rows.push(csvRow(['bper', d.bper]));
+    rows.push(csvRow(['revolut', d.revolut]));
+    rows.push(csvRow(['lastUpdated', d.lastUpdated]));
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'FLUSSI']));
+    rows.push(csvRow(['name', 'category', 'account', 'value']));
+    flows.forEach(f => {
+      rows.push(csvRow([f.name, f.category, f.account || '', f.value]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'INVESTIMENTI']));
+    rows.push(csvRow(['name', 'sublabel', 'type', 'value']));
+    investments.forEach(inv => {
+      rows.push(csvRow([inv.name, inv.sublabel || '', inv.type, inv.value]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'IMMOBILI']));
+    rows.push(csvRow(['name', 'sublabel', 'value', 'mortgage']));
+    properties.forEach(p => {
+      rows.push(csvRow([p.name, p.sublabel || '', p.value, p.mortgage || 0]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'MOVIMENTI']));
+    rows.push(csvRow(['date', 'direction', 'account', 'movement', 'category', 'necessity', 'description', 'amount', 'ccApplied', 'ccDueMonth', 'ccAppliedOn']));
+    expenses.forEach(e => {
+      const direction = e.direction || 'addebito';
+      rows.push(csvRow([
+        e.date, direction, e.account, e.movement, e.category, e.necessity || '', e.description || '', e.amount,
+        (direction === 'addebito' && e.movement === 'carta_credito') ? String(!!e.ccApplied) : '',
+        e.ccDueMonth || '',
+        e.ccAppliedOn || '',
+      ]));
+    });
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'TRASFERIMENTI']));
+    rows.push(csvRow(['date', 'from', 'to', 'amount', 'description']));
+    transfers.forEach(t => {
+      rows.push(csvRow([t.date, t.from, t.to, t.amount, t.description || '']));
+    });
+    rows.push('');
+
+    rows.push('FINE_BACKUP');
+
+    downloadCsvFile(rows, 'dashboard-skender-backup');
+  }
+
+  // ===== Import backup =====
+  // Parser CSV minimale (rispetta le virgolette come csvEscape) + validazione
+  // rigorosa: marker di formato/versione, timestamp obbligatorio, marcatore di
+  // fine file, e soprattutto il controllo di freschezza — importare un backup
+  // non più recente dei dati già presenti sul dispositivo NON è permesso, per
+  // evitare di perdere modifiche già fatte.
+
+  function parseCsvLine(line) {
+    const fields = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; }
+          else { inQuotes = false; }
+        } else {
+          cur += ch;
+        }
+      } else {
+        if (ch === '"') { inQuotes = true; }
+        else if (ch === ';') { fields.push(cur); cur = ''; }
+        else { cur += ch; }
+      }
+    }
+    fields.push(cur);
+    return fields;
+  }
+
+  function handleImportFileSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      processImportedBackup(String(e.target.result || ''));
+    };
+    reader.onerror = function() {
+      alert('Errore nella lettura del file selezionato.');
+    };
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = '';
+  }
+
+  function handleRecoverImportFileSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      processRecoveredMovements(String(e.target.result || ''));
+    };
+    reader.onerror = function() {
+      alert('Errore nella lettura del file selezionato.');
+    };
+    reader.readAsText(file, 'UTF-8');
+    event.target.value = '';
+  }
+
+  // Import dedicato al RECUPERO movimenti da estratti conto (dopo una perdita
+  // dati), diverso da "Importa backup": questo AGGIUNGE le righe del CSV al
+  // registro Movimenti esistente, senza toccarlo per il resto, e soprattutto
+  // NON tocca i saldi dei conti (adjustAccountBalance non viene mai chiamata
+  // qui) — i saldi si presumono già corretti manualmente da "Aggiorna dati"
+  // con l'importo reale letto dall'estratto conto. Formato atteso, stesso
+  // delimitatore ';' del resto della dashboard:
+  // date;direction;account;movement;category;description;amount
+  function processRecoveredMovements(text) {
+    try {
+      let lines = text.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
+      if (lines.length && lines[0].charCodeAt(0) === 0xFEFF) {
+        lines[0] = lines[0].slice(1);
+      }
+      if (!lines.length) throw new Error('File vuoto.');
+
+      // La prima riga è l'intestazione delle colonne: la saltiamo sempre,
+      // indipendentemente dal suo contenuto esatto.
+      const dataLines = lines.slice(1);
+      if (!dataLines.length) throw new Error('Il file non contiene righe di dati oltre all\'intestazione.');
+
+      const newEntries = [];
+      const errors = [];
+      dataLines.forEach((line, i) => {
+        const f = parseCsvLine(line);
+        const [date, directionRaw, account, movementRaw, category, description, amountRaw] = f;
+        const amount = parseFloat(amountRaw);
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          errors.push('Riga ' + (i + 2) + ': data mancante o non nel formato AAAA-MM-GG ("' + date + '").');
+          return;
+        }
+        if (!amount || amount <= 0) {
+          errors.push('Riga ' + (i + 2) + ': importo mancante o non valido ("' + amountRaw + '").');
+          return;
+        }
+        if (!account) {
+          errors.push('Riga ' + (i + 2) + ': conto mancante.');
+          return;
+        }
+        newEntries.push({
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          date: date,
+          direction: directionRaw === 'accredito' ? 'accredito' : 'addebito',
+          account: account,
+          movement: movementRaw || 'bonifico',
+          category: category || 'Varie',
+          description: description || '',
+          amount: amount,
+          recovered: true,
+        });
+      });
+
+      if (errors.length) {
+        throw new Error('Il file contiene ' + errors.length + ' riga/e non valida/e, importazione annullata:\n' + errors.slice(0, 10).join('\n') + (errors.length > 10 ? '\n... e altre ' + (errors.length - 10) + '.' : ''));
+      }
+      if (!newEntries.length) {
+        throw new Error('Nessuna riga valida trovata nel file.');
+      }
+
+      const totalUscite = newEntries.filter(e => e.direction === 'addebito').reduce((s, e) => s + e.amount, 0);
+      const totalEntrate = newEntries.filter(e => e.direction === 'accredito').reduce((s, e) => s + e.amount, 0);
+      const dates = newEntries.map(e => e.date).sort();
+      const summary =
+        'Stai per AGGIUNGERE ' + newEntries.length + ' movimenti recuperati al registro esistente (attuali: ' + expenses.length + '):\n\n' +
+        '- Periodo: ' + dates[0] + ' → ' + dates[dates.length - 1] + '\n' +
+        '- Uscite totali: ' + fmt(totalUscite) + '\n' +
+        '- Entrate totali: ' + fmt(totalEntrate) + '\n\n' +
+        'Questa operazione NON tocca i saldi dei conti né nessun\'altra sezione (investimenti, immobili, flussi): aggiunge solo queste righe al registro Movimenti. Se contiene già voci per lo stesso periodo potresti ritrovarti con dei duplicati da controllare ed eliminare a mano. Continuare?';
+
+      if (!confirm(summary)) return;
+
+      expenses = expenses.concat(newEntries);
+      expenses.sort((a, b) => b.date.localeCompare(a.date));
+      saveExpenses(expenses);
+      touchLastModified();
+      renderExpenses();
+      renderAnnualAnalysis();
+      alert(newEntries.length + ' movimenti aggiunti con successo.');
+    } catch (err) {
+      alert('Errore durante l\'importazione: ' + err.message);
+    }
+  }
+
+  function processImportedBackup(text) {
+    try {
+      let lines = text.split(/\r\n|\n|\r/);
+      if (lines.length && lines[0].charCodeAt(0) === 0xFEFF) {
+        lines[0] = lines[0].slice(1);
+      }
+
+      function nextNonEmptyIndex(from) {
+        let i = from;
+        while (i < lines.length && lines[i].trim() === '') i++;
+        return i;
+      }
+
+      let idx = nextNonEmptyIndex(0);
+      if (idx >= lines.length) throw new Error('File vuoto o illeggibile.');
+
+      const markerFields = parseCsvLine(lines[idx]);
+      if (markerFields[0] !== BACKUP_FORMAT_MARKER || markerFields[1] !== BACKUP_FORMAT_VERSION) {
+        throw new Error('Questo file non è un backup valido generato da questa dashboard. Se hai scaricato un "Report leggibile", quello non può essere reimportato: usa "💾 Backup completo" in fase di export.');
+      }
+      idx++;
+
+      let generatedOn = null;
+      let lastModifiedBackup = null;
+      while (idx < lines.length && lines[idx].trim() !== '' && !lines[idx].startsWith('SEZIONE')) {
+        const f = parseCsvLine(lines[idx]);
+        if (f[0] === 'Generato il') generatedOn = f[1];
+        if (f[0] === 'Ultima modifica dati') lastModifiedBackup = f[1];
+        idx++;
+      }
+
+      if (!lastModifiedBackup) {
+        throw new Error('Il backup non contiene il timestamp di ultima modifica: file incompleto o corrotto.');
+      }
+
+      // Controllo di freschezza: un backup non più recente dei dati attuali si
+      // può importare (es. per tornare a uno stato precedente), ma solo dopo una
+      // doppia conferma esplicita più sotto, perché le modifiche fatte dopo il
+      // backup vanno perse.
+      const currentLastModified = localStorage.getItem(LAST_MODIFIED_KEY);
+      const isOlderBackup = !!currentLastModified &&
+        new Date(lastModifiedBackup).getTime() <= new Date(currentLastModified).getTime();
+
+      const sections = {};
+      let reachedEnd = false;
+      while (idx < lines.length) {
+        const line = lines[idx];
+        if (line.trim() === '') { idx++; continue; }
+        if (line.trim() === 'FINE_BACKUP') { reachedEnd = true; idx++; break; }
+        const sezioneFields = parseCsvLine(line);
+        if (sezioneFields[0] !== 'SEZIONE') { idx++; continue; }
+        const sectionName = sezioneFields[1];
+        idx++;
+        if (idx >= lines.length) break;
+        const headerFields = parseCsvLine(lines[idx]);
+        idx++;
+        const rowsOut = [];
+        while (idx < lines.length && lines[idx].trim() !== '' && !lines[idx].startsWith('SEZIONE') && lines[idx].trim() !== 'FINE_BACKUP') {
+          const rowFields = parseCsvLine(lines[idx]);
+          const obj = {};
+          headerFields.forEach((h, i) => { obj[h] = rowFields[i] !== undefined ? rowFields[i] : ''; });
+          rowsOut.push(obj);
+          idx++;
+        }
+        sections[sectionName] = rowsOut;
+      }
+
+      if (!reachedEnd) {
+        throw new Error('Il file sembra incompleto (manca il marcatore di fine backup): importazione annullata per sicurezza.');
+      }
+
+      const contiRows = sections['CONTI'] || [];
+      const contiMap = {};
+      contiRows.forEach(r => { contiMap[r.key] = r.value; });
+      const newD = {
+        lastUpdated: contiMap.lastUpdated || todayIsoLocal(),
+        fineco: parseFloat(contiMap.fineco) || 0,
+        bper: parseFloat(contiMap.bper) || 0,
+        revolut: parseFloat(contiMap.revolut) || 0,
+      };
+
+      // Accetta sia la sezione FLUSSI (formato attuale, lista dinamica) sia i
+      // vecchi backup fatti prima dell'introduzione dei flussi dinamici, dove
+      // stipendio e contributi Cometa erano 4 campi fissi dentro CONTI.
+      const newFlows = sections['FLUSSI']
+        ? sections['FLUSSI'].map(r => ({
+            id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+            name: r.name || '',
+            category: r.category || 'altro',
+            account: r.account || '',
+            value: parseFloat(r.value) || 0,
+          }))
+        : [
+            { id: Date.now() + '-a', name: 'Stipendio netto', category: 'stipendio', account: 'Fineco', value: parseFloat(contiMap.salaryFineco) || 0 },
+            { id: Date.now() + '-b', name: 'Stipendio netto', category: 'stipendio', account: 'BPER', value: parseFloat(contiMap.salaryBper) || 0 },
+            { id: Date.now() + '-c', name: 'Contributo dipendente Cometa', category: 'pensione_dipendente', account: '', value: parseFloat(contiMap.pensionEmp) || 0 },
+            { id: Date.now() + '-d', name: 'Contributo azienda Cometa', category: 'pensione_azienda', account: '', value: parseFloat(contiMap.pensionAz) || 0 },
+          ];
+
+      const newInvestments = (sections['INVESTIMENTI'] || []).map(r => ({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name: r.name || '',
+        sublabel: r.sublabel || '',
+        type: r.type === 'pensione' ? 'pensione' : 'mercato',
+        value: parseFloat(r.value) || 0,
+      }));
+
+      const newProperties = (sections['IMMOBILI'] || []).map(r => ({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        name: r.name || '',
+        sublabel: r.sublabel || '',
+        value: parseFloat(r.value) || 0,
+        mortgage: parseFloat(r.mortgage) || 0,
+      }));
+
+      // Accetta sia la sezione MOVIMENTI (formato attuale, con colonna direction)
+      // sia la vecchia sezione SPESE (backup fatti prima dell'introduzione degli
+      // accrediti): in quel caso ogni riga era implicitamente un addebito.
+      const newExpenses = (sections['MOVIMENTI'] || sections['SPESE'] || []).map(r => {
+        const direction = r.direction === 'accredito' ? 'accredito' : 'addebito';
+        const e = {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          date: r.date || '',
+          direction: direction,
+          account: r.account || '',
+          movement: r.movement || '',
+          category: r.category || '',
+          description: r.description || '',
+          amount: parseFloat(r.amount) || 0,
+        };
+        // Campo "necessity", introdotto dopo: presente solo nei backup più recenti
+        // che hanno la colonna; nei backup vecchi r.necessity è undefined e la
+        // voce resta semplicemente senza etichetta, coerente col comportamento
+        // per i movimenti creati prima dell'introduzione del campo.
+        if (r.necessity === 'necessaria' || r.necessity === 'discrezionale') {
+          e.necessity = r.necessity;
+        }
+        if (direction === 'addebito' && e.movement === 'carta_credito') {
+          e.ccApplied = r.ccApplied === 'true';
+          e.ccDueMonth = r.ccDueMonth || '';
+          if (r.ccAppliedOn) e.ccAppliedOn = r.ccAppliedOn;
+        }
+        return e;
+      });
+
+      const newTransfers = (sections['TRASFERIMENTI'] || []).map(r => ({
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        date: r.date || '',
+        from: r.from || '',
+        to: r.to || '',
+        amount: parseFloat(r.amount) || 0,
+        description: r.description || '',
+      }));
+
+      const summary =
+        (isOlderBackup
+          ? '⚠️ ATTENZIONE: questo backup NON è più recente dei dati attuali.\n' +
+            'Ultima modifica nel backup: ' + lastModifiedBackup + '\n' +
+            'Ultima modifica dei dati attuali: ' + currentLastModified + '\n' +
+            'Tutte le modifiche fatte dopo il backup andranno PERSE.\n\n'
+          : '') +
+        'Stai per SOSTITUIRE tutti i dati attuali con quelli del backup generato il ' + (generatedOn || lastModifiedBackup) + ':\n\n' +
+        '- Conti: Fineco/BPER/Revolut\n' +
+        '- Flussi mensili: ' + newFlows.length + ' (attuali: ' + flows.length + ')\n' +
+        '- Investimenti: ' + newInvestments.length + ' (attuali: ' + investments.length + ')\n' +
+        '- Immobili: ' + newProperties.length + ' (attuali: ' + properties.length + ')\n' +
+        '- Movimenti: ' + newExpenses.length + ' (attuali: ' + expenses.length + ')\n' +
+        '- Trasferimenti: ' + newTransfers.length + ' (attuali: ' + transfers.length + ')\n\n' +
+        'Questa operazione non è reversibile (a meno di avere un altro backup più recente). Continuare?';
+
+      if (!confirm(summary)) return;
+      if (isOlderBackup && !confirm('Conferma definitiva: stai ripristinando dati PIÙ VECCHI di quelli attuali (backup del ' + lastModifiedBackup + ' contro dati del ' + currentLastModified + '). Le modifiche successive al backup verranno cancellate e NON potranno essere recuperate, a meno di averne un backup più recente. Procedere davvero?')) return;
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newD));
+      flows = newFlows;
+      saveFlows(flows);
+      investments = newInvestments;
+      saveInvestments(investments);
+      properties = newProperties;
+      saveProperties(properties);
+      expenses = newExpenses;
+      saveExpenses(expenses);
+      transfers = newTransfers;
+      saveTransfers(transfers);
+      localStorage.setItem(LAST_MODIFIED_KEY, lastModifiedBackup);
+      // I save*() qui sopra scrivono solo nel localStorage: senza questa
+      // chiamata dati.json resterebbe allo stato precedente e al prossimo
+      // avvio l'importazione verrebbe annullata dall'idratazione da file.
+      syncToServerFile();
+
+      migratePendingCcDueMonths();
+      applyMaturedCreditCardCharges();
+      renderInvestments();
+      renderProperties();
+      renderFlows();
+      render(loadData());
+      renderExpenses();
+      renderAnnualAnalysis();
+      renderTransfers();
+
+      alert('Importazione completata: dashboard ricreata dal backup del ' + (generatedOn || lastModifiedBackup) + '.');
+    } catch (err) {
+      alert('Importazione fallita: ' + err.message);
+    }
+  }
+
+  // ===== Chatbot consulente AI + calcolatrice a due passaggi =====
+
+  function formatFinancialSnapshot(d) {
+    const pensionList = pensionInvestments();
+    const marketList = marketInvestments();
+    const pensionTotal = sumInvestments(pensionList);
+    const marketTotal = sumInvestments(marketList);
+    const houseTotal = propertiesTotal();
+    const mortgageTot = mortgageTotal();
+    const liquidCash = d.fineco + d.bper + d.revolut;
+    const liquidAssets = marketTotal + d.fineco + d.bper + d.revolut;
+    const totalAssets = houseTotal + pensionTotal + marketTotal + d.fineco + d.bper + d.revolut;
+    const netWorth = totalAssets - mortgageTot;
+    const liquidNet = liquidAssets - mortgageTot;
+    const pensionAnnual = (d.pensionEmp + d.pensionAz) * 12;
+
+    return [
+      '- Patrimonio netto totale: ' + fmt(netWorth),
+      '- Patrimonio liquido netto (liquidità+investimenti di mercato - mutui): ' + fmt(liquidNet),
+      '- Immobili: ' + (properties.length ? properties.map(p => p.name + ' ' + fmt(p.value) + (p.mortgage > 0 ? ' (mutuo residuo ' + fmt(p.mortgage) + ')' : ' (nessun mutuo)')).join(', ') + ' — valore totale ' + fmt(houseTotal) + ', mutui residui totali ' + fmt(mortgageTot) + ' (mutuo su Via Fiorentina: fisso 0,8%, rata ' + fmt(MORTGAGE_MONTHLY) + '/mese, 34 rate residue), equity totale ' + fmt(houseTotal - mortgageTot) : 'nessuno registrato'),
+      '- Investimenti pensione/TFR (illiquidi fino a pensionamento/fine rapporto): ' + (pensionList.length ? pensionList.map(i => i.name + ' ' + fmt(i.value)).join(', ') + ' (totale ' + fmt(pensionTotal) + ')' : 'nessuno registrato'),
+      '- Investimenti di mercato (liquidi a riscatto/vendita): ' + (marketList.length ? marketList.map(i => i.name + ' ' + fmt(i.value)).join(', ') + ' (totale ' + fmt(marketTotal) + ')' : 'nessuno registrato'),
+      '- Documenti KID/KIID disponibili (NON allegati automaticamente — Skender può allegarli esplicitamente alla domanda con il selettore "📄 Allega KID…" se vuole che tu li legga): ' + (investments.some(i => i.document) ? investments.filter(i => i.document).map(i => i.name).join(', ') : 'nessuno allegato'),
+      '- Saldo attuale conti: Fineco ' + fmt(d.fineco) + ', BPER ' + fmt(d.bper) + ', Revolut ' + fmt(d.revolut) + ' (liquidità totale ' + fmt(liquidCash) + ')',
+      '- Stipendio netto mensile: totale ' + fmt(d.salary) + ' (accredito su Fineco: ' + fmt(d.salaryFineco) + ', accredito su BPER: ' + fmt(d.salaryBper) + ')',
+      '- Contributi mensili a Cometa: dipendente ' + fmt(d.pensionEmp) + ' + azienda ' + fmt(d.pensionAz) + ' = ' + fmt(d.pensionEmp + d.pensionAz) + '/mese (' + fmt(pensionAnnual) + '/anno, limite deducibile 2026: ' + fmt(PENSION_LIMIT) + ')',
+      '- Registro movimenti (inserito manualmente da Skender): ' + formatExpensesSummary(loadExpenses()),
+      '- ' + formatTransfersSummary(loadTransfers()),
+      '- Ultimo aggiornamento dati inserito da Skender: ' + d.lastUpdated,
+    ].join('\n');
+  }
+
+  // Valutatore aritmetico sicuro: supporta solo cifre, + - * / ( ) e punto decimale.
+  // Usato per eseguire i calcoli richiesti dal modello, così i numeri sono sempre
+  // corretti indipendentemente dalla capacità del modello di fare aritmetica a mente.
+  function safeEval(expr) {
+    try {
+      if (typeof expr !== 'string') return null;
+      const clean = expr.trim();
+      if (!clean || !/^[0-9+\-*/(). \t]+$/.test(clean)) return null;
+
+      let pos = 0;
+      function skipSpaces() { while (clean[pos] === ' ' || clean[pos] === '\t') pos++; }
+      function parseExpression() {
+        let value = parseTerm();
+        while (true) {
+          skipSpaces();
+          const ch = clean[pos];
+          if (ch === '+' || ch === '-') {
+            pos++;
+            const rhs = parseTerm();
+            value = ch === '+' ? value + rhs : value - rhs;
+          } else break;
+        }
+        return value;
+      }
+      function parseTerm() {
+        let value = parseFactor();
+        while (true) {
+          skipSpaces();
+          const ch = clean[pos];
+          if (ch === '*' || ch === '/') {
+            pos++;
+            const rhs = parseFactor();
+            value = ch === '*' ? value * rhs : value / rhs;
+          } else break;
+        }
+        return value;
+      }
+      function parseFactor() {
+        skipSpaces();
+        let sign = 1;
+        if (clean[pos] === '-') { sign = -1; pos++; skipSpaces(); }
+        else if (clean[pos] === '+') { pos++; skipSpaces(); }
+        if (clean[pos] === '(') {
+          pos++;
+          const value = parseExpression();
+          skipSpaces();
+          if (clean[pos] === ')') pos++;
+          return sign * value;
+        }
+        const start = pos;
+        while (pos < clean.length && /[0-9.]/.test(clean[pos])) pos++;
+        if (start === pos) throw new Error('token non valido');
+        return sign * parseFloat(clean.slice(start, pos));
+      }
+
+      const result = parseExpression();
+      skipSpaces();
+      if (pos !== clean.length) return null;
+      if (!isFinite(result)) return null;
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  // Nessun limite di contenuto imposto qui: se il prompt diventa troppo lungo per
+  // il modello, l'errore restituito da server.py viene mostrato in chat con istruzioni per
+  // rimuovere manualmente l'allegato (✕) o la cronologia ("Cancella conversazione").
+  function historyToText(history, maxTurns) {
+    if (!history.length) return '(nessuno scambio precedente)';
+    return history.slice(-maxTurns)
+      .map(h => (h.role === 'user' ? 'Skender: ' : 'Consulente: ') + h.text)
+      .join('\n');
+  }
+
+  function buildCalcPlanPrompt(d, question, history) {
+    const historyText = historyToText(history, 4);
+
+    return [
+      'Sei il modulo di pianificazione calcoli di un assistente finanziario. NON rispondere alla domanda dell\'utente: il tuo unico compito è decidere se serve un calcolo aritmetico per rispondere, e se sì, scrivere le espressioni esatte da valutare.',
+      'Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo e senza backtick, in uno di questi due formati:',
+      '{"needsCalc": false}',
+      'oppure',
+      '{"needsCalc": true, "steps": [{"label": "descrizione breve del calcolo", "expression": "espressione aritmetica con SOLI numeri, es: 1769 + 4200"}]}',
+      'Regole: usa ESCLUSIVAMENTE i numeri presenti nei dati sotto (nessuna variabile, nessuna stima, nessun dato inventato). L\'espressione può contenere solo cifre, + - * / ( ) e punto decimale. Se la domanda richiede un dato che non è tra i numeri forniti (es. spese non tracciate), imposta needsCalc su false invece di stimarlo.',
+      '',
+      '## Dati disponibili',
+      formatFinancialSnapshot(d),
+      '',
+      '## Conversazione recente',
+      historyText,
+      '',
+      '## Domanda da valutare',
+      question,
+    ].join('\n');
+  }
+
+  function buildFinalPrompt(d, question, history, calcBlock, attachment) {
+    const historyText = historyToText(history, 6);
+
+    return [
+      '## System instructions (fixed, always identical, never summarized or altered)',
+      ADVISOR_SYSTEM_PROMPT,
+      '',
+      'IMPORTANTE sui calcoli: non eseguire TU alcuna operazione aritmetica. Se sotto è presente la sezione "Risultati calcolati (verificati)", usa quei numeri esatti così come sono, senza modificarli o ricalcolarli. Se la domanda richiede un calcolo che non compare tra i risultati verificati, dillo esplicitamente ("non ho un dato verificato per calcolare questo") invece di stimare un numero a mente.',
+      'Usa solo i dati forniti qui sotto. Se manca un\'informazione necessaria, dillo esplicitamente invece di inventarla.',
+      'Sii diretto e conciso: massimo 4-6 frasi, a meno che la domanda richieda esplicitamente un elenco più lungo.',
+      '',
+      '## Situazione finanziaria attuale di Skender',
+      formatFinancialSnapshot(d),
+      '',
+      '## Memoria del consulente (fatti duraturi da sessioni precedenti, sopravvivono alla cancellazione della conversazione)',
+      advisorMemory.trim() ? advisorMemory : '(nessuna nota salvata ancora)',
+      '',
+      calcBlock
+        ? '## Risultati calcolati (verificati con calcolatrice esterna — usa questi numeri esatti, non ricalcolare)\n' + calcBlock
+        : '## Risultati calcolati\n(nessun calcolo verificato per questa domanda — se serve un numero, dichiara che non è disponibile)',
+      '',
+      '## Contesto di mercato (snapshot al ' + CONTEXT_AS_OF + ', NON in tempo reale)',
+      '- ' + MARKET_CONTEXT,
+      '',
+      '## Normativa fiscale di riferimento, Italia (snapshot al ' + CONTEXT_AS_OF + ')',
+      '- ' + TAX_CONTEXT,
+      '',
+      attachment
+        ? ('## Documento allegato da Skender: ' + attachment.name + '\n' + attachment.content + '\n')
+        : '',
+      '## Conversazione precedente',
+      historyText,
+      '',
+      '## Domanda di Skender',
+      question,
+    ].join('\n');
+  }
+
+  function parseCalcPlan(text) {
+    try {
+      let t = (text || '').trim();
+      t = t.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+      const start = t.indexOf('{');
+      const end = t.lastIndexOf('}');
+      if (start === -1 || end === -1 || end < start) return null;
+      const obj = JSON.parse(t.slice(start, end + 1));
+      return (obj && typeof obj === 'object') ? obj : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function loadChat() {
+    try {
+      const s = localStorage.getItem(CHAT_STORAGE_KEY);
+      return s ? JSON.parse(s) : [];
+    } catch { return []; }
+  }
+
+  function saveChat(history) {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(history));
+  }
+
+  let chatHistory = loadChat();
+
+  // Allegato in staging per il prossimo messaggio: solo file di testo (.txt/.csv/.md),
+  // letti con FileReader. Nessun parsing di PDF/Word: non c'è una libreria di
+  // estrazione testo nella pagina, e /api/ask accetta solo testo.
+  let stagedAttachment = null;
+  const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024; // limite di lettura file (protezione browser, non del contenuto)
+
+  function handleChatFileSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!/\.(txt|csv|md)$/i.test(file.name)) {
+      alert('Per ora puoi allegare solo file di testo semplice (.txt, .csv, .md). PDF e Word non sono supportati: copia e incolla il testo direttamente nella domanda.');
+      return;
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      alert('File troppo grande (max 2MB).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const content = String(e.target.result || '');
+      stagedAttachment = { name: file.name, content: content };
+      renderAttachmentChip();
+    };
+    reader.onerror = function() {
+      alert('Errore nella lettura del file.');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderAttachmentChip() {
+    const el = document.getElementById('chatAttachChip');
+    if (!stagedAttachment) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
+    }
+    el.style.display = 'block';
+    el.innerHTML =
+      '<span class="chat-attach-chip">📎 ' + escapeHtml(stagedAttachment.name) +
+      ' (' + stagedAttachment.content.length.toLocaleString('it-IT') + ' caratteri)' +
+      '<button onclick="removeAttachment()" title="Rimuovi allegato">✕ Rimuovi</button></span>';
+  }
+
+  function removeAttachment() {
+    stagedAttachment = null;
+    renderAttachmentChip();
+  }
+
+  function renderChat() {
+    const log = document.getElementById('chatLog');
+    log.innerHTML = chatHistory.map(h =>
+      '<div class="chat-msg ' + h.role + '">' + escapeHtml(h.text) + '</div>'
+    ).join('');
+    log.scrollTop = log.scrollHeight;
+
+    document.getElementById('chatContextNote').textContent =
+      'Ogni domanda passa prima da una calcolatrice esterna deterministica (i conti non li fa il modello "a mente"), poi riceve dati finanziari attuali + snapshot fiscale/di mercato raccolto al ' + CONTEXT_AS_OF +
+      ' + la memoria a lungo termine qui sopra (sopravvive alla cancellazione della chat). Puoi allegare un file di testo (📎, solo .txt/.csv/.md, nessun limite di lunghezza) o un documento KID già salvato su un investimento (📄) da includere nella prossima domanda — rimuovilo con "✕ Rimuovi" se il messaggio risulta troppo lungo per il modello. Modello: Claude Opus 5 via server.py. Per decisioni importanti, verifica con un consulente abilitato.';
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function extractAdvisorText(res) {
+    try {
+      if (typeof res === 'string') return res;
+      if (!res) return 'Nessuna risposta ricevuta.';
+      if (typeof res.text === 'string') return res.text;
+      if (Array.isArray(res.content)) {
+        return res.content.map(c => (typeof c === 'string' ? c : (c.text || ''))).join('\n').trim() || JSON.stringify(res);
+      }
+      if (typeof res.content === 'string') return res.content;
+      if (res.structuredContent) return typeof res.structuredContent === 'string' ? res.structuredContent : JSON.stringify(res.structuredContent);
+      return JSON.stringify(res);
+    } catch {
+      return 'Errore nel leggere la risposta.';
+    }
+  }
+
+  // ===== Memoria del consulente: display, editing manuale =====
+
+  function renderMemory() {
+    const el = document.getElementById('memoryDisplay');
+    const count = advisorMemory.length;
+    if (!advisorMemory.trim()) {
+      el.innerHTML = '<em>Nessuna nota salvata ancora. Si aggiorna automaticamente quando premi "Cancella conversazione" nella chat sotto, oppure modificala qui a mano.</em>';
+    } else {
+      el.innerHTML = '<div style="white-space:pre-wrap;">' + escapeHtml(advisorMemory) + '</div>' +
+        '<div style="margin-top:6px;font-size:10px;color:var(--text-muted);">' + count.toLocaleString('it-IT') + ' / ' + MEMORY_MAX_CHARS.toLocaleString('it-IT') + ' caratteri</div>';
+    }
+  }
+
+  // Mostra/nasconde il blocco fisso di persona/regole (ADVISOR_SYSTEM_PROMPT) in
+  // sola lettura, per trasparenza — non è editabile da qui, a differenza della
+  // nota libera qui sotto.
+  // Sezione "Memoria del consulente": collassabile, chiusa di default (anche al
+  // primo utilizzo). Lo stato aperto/chiuso scelto dall'utente viene ricordato
+  // tra una sessione e l'altra in localStorage, come il tema.
+  const MEMORY_COLLAPSE_KEY = 'skender_fin_memory_collapsed_v1';
+
+  function loadMemoryCollapsed() {
+    try {
+      const saved = localStorage.getItem(MEMORY_COLLAPSE_KEY);
+      if (saved === 'true' || saved === 'false') return saved === 'true';
+    } catch {}
+    return true; // default: chiusa
+  }
+
+  function applyMemoryCollapse(collapsed) {
+    const wrap = document.getElementById('memoryBodyWrap');
+    const chevron = document.getElementById('memoryCollapseChevron');
+    if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
+    if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
+    try { localStorage.setItem(MEMORY_COLLAPSE_KEY, String(collapsed)); } catch {}
+  }
+
+  function toggleMemoryCollapse() {
+    const wrap = document.getElementById('memoryBodyWrap');
+    const isCollapsed = !wrap || wrap.style.display === 'none';
+    applyMemoryCollapse(!isCollapsed);
+  }
+
+  function toggleFixedRules() {
+    applyMemoryCollapse(false); // espande la sezione se era chiusa, altrimenti resta visibile
+    const wrap = document.getElementById('fixedRulesWrap');
+    const isOpen = wrap.style.display !== 'none';
+    if (isOpen) {
+      wrap.style.display = 'none';
+    } else {
+      document.getElementById('fixedRulesText').textContent = ADVISOR_SYSTEM_PROMPT;
+      wrap.style.display = 'block';
+    }
+  }
+
+  function toggleMemoryEditor() {
+    applyMemoryCollapse(false); // espande la sezione se era chiusa, altrimenti resta visibile
+    const wrap = document.getElementById('memoryEditorWrap');
+    const isOpen = wrap.style.display !== 'none';
+    if (isOpen) {
+      wrap.style.display = 'none';
+    } else {
+      document.getElementById('memoryEditorTextarea').value = advisorMemory;
+      wrap.style.display = 'block';
+    }
+  }
+
+  function cancelMemoryEdit() {
+    document.getElementById('memoryEditorWrap').style.display = 'none';
+  }
+
+  function saveMemoryEdit() {
+    const text = document.getElementById('memoryEditorTextarea').value;
+    advisorMemory = text;
+    saveMemory(advisorMemory);
+    touchLastModified();
+    document.getElementById('memoryEditorWrap').style.display = 'none';
+    renderMemory();
+  }
+
+  // Come historyToText, ma con un tetto sui CARATTERI totali (non sui turni):
+  // tiene gli scambi più recenti finché restano nel budget e segnala quanti
+  // scambi più vecchi sono stati omessi. Serve a restare sotto il limite di
+  // lunghezza del modello anche con sessioni lunghe.
+  function historyToTextBudgeted(history, charBudget) {
+    if (!history.length) return '(nessuno scambio precedente)';
+    const lines = history.map(h => (h.role === 'user' ? 'Skender: ' : 'Consulente: ') + h.text);
+    let total = 0;
+    const kept = [];
+    for (let i = lines.length - 1; i >= 0; i--) {
+      total += lines[i].length + 1;
+      if (total > charBudget && kept.length) break;
+      kept.unshift(lines[i]);
+    }
+    const omitted = lines.length - kept.length;
+    return (omitted > 0 ? '[...' + omitted + ' scambi più vecchi omessi per restare entro il limite di lunghezza del modello...]\n' : '') + kept.join('\n');
+  }
+
+  // Prompt per aggiornare + comprimere la memoria PRIMA di cancellare la
+  // conversazione: riceve la nota attuale e la cronologia recente (limitata a un
+  // budget di caratteri, non l'intera conversazione senza limiti — altrimenti con
+  // sessioni lunghe il prompt supera il limite di lunghezza del modello e
+  // l'aggiornamento fallisce ogni volta).
+  function buildMemoryUpdatePrompt(currentMemory, history) {
+    return [
+      'Sei il modulo di memoria a lungo termine di un consulente finanziario AI. Il tuo compito: aggiornare una nota markdown compatta con i fatti fondamentali e duraturi su Skender (obiettivi, preferenze, decisioni prese, tolleranza al rischio, promemoria importanti) — NON un verbale della conversazione, solo ciò che vale la pena ricordare per le prossime sessioni.',
+      'IMPORTANTE: scrivi la nota SEMPRE in inglese, anche se la conversazione qui sotto è in italiano — traduci i fatti rilevanti in inglese conciso. Il consulente continuerà comunque a risponderti in italiano in chat; solo questa nota interna va tenuta in inglese.',
+      'Rispondi SOLO con il markdown aggiornato in inglese, senza commenti, senza backtick, senza premesse o spiegazioni.',
+      'Regole: integra nella nota esistente eventuali fatti nuovi e rilevanti emersi nella conversazione qui sotto; se un\'informazione precedente è superata o contraddetta da qualcosa di più recente, aggiornala invece di tenerle entrambe; scarta dettagli poco importanti o transitori (saluti, chiarimenti, dettagli di calcolo già riflessi nei dati della dashboard). Il risultato finale NON deve superare ' + MEMORY_MAX_CHARS + ' caratteri: se necessario, comprimi o riassumi ulteriormente pur di rientrare nel limite, dando priorità alle informazioni più durature e rilevanti.',
+      '',
+      '## Nota attuale',
+      currentMemory.trim() ? currentMemory : '(vuota, nessuna nota precedente)',
+      '',
+      '## Conversazione da incorporare prima che venga cancellata',
+      historyToTextBudgeted(history, 6000),
+    ].join('\n');
+  }
+
+  // Il consulente AI passa da server.py, che inoltra il prompt all'API
+  // Anthropic (endpoint /api/ask). I prompt includono già snapshot finanziario
+  // e memoria, quindi basta inviare il testo del prompt.
+  const ASK_API = '/api/ask';
+
+  async function askAdvisor(prompt) {
+    let res;
+    try {
+      res = await fetch(ASK_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt }),
+      });
+    } catch {
+      throw new Error('server.py non raggiungibile: avvialo (avvia-dashboard.command) e apri la dashboard da http://localhost:8765/');
+    }
+    let body = null;
+    try { body = await res.json(); } catch { /* risposta non JSON */ }
+    if (!res.ok || !body || body.status !== 'ok') {
+      throw new Error((body && body.message) || ('HTTP ' + res.status));
+    }
+    return body.text;
+  }
+
+  async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const typedQuestion = input.value.trim();
+    const activeAttachment = stagedAttachment;
+
+    if (!typedQuestion && !activeAttachment) return;
+    const question = typedQuestion || 'Analizza il documento allegato e commenta cosa è rilevante per la mia situazione finanziaria.';
+
+    const d = loadData();
+    const displayText = activeAttachment ? ('📎 ' + activeAttachment.name + '\n' + question) : question;
+    chatHistory.push({ role: 'user', text: displayText });
+    saveChat(chatHistory);
+    renderChat();
+    input.value = '';
+    stagedAttachment = null;
+    renderAttachmentChip();
+
+    const btn = document.getElementById('chatSendBtn');
+    btn.disabled = true;
+    const log = document.getElementById('chatLog');
+    const typingEl = document.createElement('div');
+    typingEl.className = 'chat-msg typing';
+    typingEl.textContent = 'Verifico se servono calcoli...';
+    log.appendChild(typingEl);
+    log.scrollTop = log.scrollHeight;
+
+    const historyBeforeThis = chatHistory.slice(0, -1);
+
+    try {
+      // Passo 1: il modello propone un piano di calcolo (solo espressioni numeriche)
+      let calcBlock = '';
+      try {
+        const planPrompt = buildCalcPlanPrompt(d, question, historyBeforeThis);
+        const planRes = await askAdvisor(planPrompt);
+        const plan = parseCalcPlan(extractAdvisorText(planRes));
+        if (plan && plan.needsCalc && Array.isArray(plan.steps) && plan.steps.length) {
+          calcBlock = plan.steps.map(s => {
+            const expr = String(s.expression || '');
+            const label = String(s.label || 'Calcolo');
+            const val = safeEval(expr);
+            return val !== null
+              ? '- ' + label + ': ' + expr + ' = ' + fmt(val)
+              : '- ' + label + ': espressione "' + expr + '" non valida — NON usare questo numero, dichiara che non è disponibile.';
+          }).join('\n');
+        }
+      } catch {
+        calcBlock = ''; // se il planner fallisce, si procede senza calcoli verificati
+      }
+
+      typingEl.textContent = 'Sto scrivendo la risposta...';
+
+      // Passo 2: risposta finale, con i calcoli già eseguiti e verificati da JS.
+      // Nessun limite di contenuto imposto qui né fallback automatico silenzioso:
+      // se l'API rifiuta il prompt (es. troppo lungo), l'errore
+      // arriva in chat con istruzioni per intervenire manualmente.
+      const finalPrompt = buildFinalPrompt(d, question, historyBeforeThis, calcBlock, activeAttachment);
+      const res = await askAdvisor(finalPrompt);
+      const answer = extractAdvisorText(res);
+      chatHistory.push({ role: 'assistant', text: answer });
+    } catch (err) {
+      const isValidationError = err && err.message && /validation|prompt/i.test(err.message);
+      const hint = isValidationError
+        ? ' Probabile causa: il messaggio (allegato e/o cronologia) è troppo lungo per il modello. Rimuovi l\'allegato con "✕ Rimuovi" sopra la casella, oppure premi "Cancella conversazione" per azzerare la cronologia, poi riprova.'
+        : '';
+      chatHistory.push({ role: 'error', text: 'Errore nel contattare il consulente AI: ' + (err && err.message ? err.message : 'riprova tra poco.') + hint });
+    } finally {
+      saveChat(chatHistory);
+      renderChat();
+      btn.disabled = false;
+    }
+  }
+
+  function askSuggestion(text) {
+    document.getElementById('chatInput').value = text;
+    sendChat();
+  }
+
+  // Prima aggiorna e comprime la memoria del consulente con quanto discusso in
+  // questa conversazione, POI cancella la cronologia — mai il contrario. Se
+  // l'aggiornamento fallisce (errore di rete, prompt troppo lungo, ecc.), la
+  // cancellazione viene bloccata per non perdere quelle informazioni: riprova,
+  // oppure correggi/svuota la memoria a mano da "🧠 Memoria del consulente".
+  async function clearChat() {
+    if (!chatHistory.length) {
+      chatHistory = [];
+      saveChat(chatHistory);
+      renderChat();
+      return;
+    }
+
+    const btn = document.getElementById('clearChatBtn');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Aggiornamento memoria…';
+
+    try {
+      const prompt = buildMemoryUpdatePrompt(advisorMemory, chatHistory);
+      const res = await askAdvisor(prompt);
+      const updated = extractAdvisorText(res).trim();
+      if (!updated) {
+        throw new Error('risposta vuota dal modello durante l\'aggiornamento della memoria');
+      }
+      advisorMemory = updated.length > MEMORY_MAX_CHARS ? updated.slice(0, MEMORY_MAX_CHARS) : updated;
+      saveMemory(advisorMemory);
+      touchLastModified();
+      renderMemory();
+
+      chatHistory = [];
+      saveChat(chatHistory);
+      renderChat();
+    } catch (err) {
+      alert('Non sono riuscito ad aggiornare la memoria del consulente prima di cancellare la conversazione (' + (err && err.message ? err.message : 'errore sconosciuto') + '). La conversazione NON è stata cancellata, per non perdere queste informazioni: riprova tra poco, oppure modifica la memoria a mano da "🧠 Memoria del consulente" e poi ricancella.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  }
+
+  // ===== Render principale =====
+
+  function render(d) {
+    const pensionList = pensionInvestments();
+    const marketList = marketInvestments();
+    const pensionInvTotal = sumInvestments(pensionList);
+    const marketInvTotal = sumInvestments(marketList);
+    const houseTotal = propertiesTotal();
+    const mortgageTot = mortgageTotal();
+    const totalAssets = houseTotal + pensionInvTotal + marketInvTotal + d.fineco + d.bper + d.revolut;
+    const netWorth = totalAssets - mortgageTot;
+    // Patrimonio liquido = liquidità sui conti (Fineco+BPER+Revolut) + investimenti
+    // di mercato (riscattabili/vendibili a breve) − mutui residui. ESCLUDE
+    // deliberatamente pensione/TFR (Cometa) e immobili, perché non liquidabili a
+    // breve termine — vedi anche il sottotitolo nella card "Patrimonio Liquido".
+    const liquidAssets = marketInvTotal + d.fineco + d.bper + d.revolut;
+    const liquidNet = liquidAssets - mortgageTot;
+
+    document.getElementById('netWorth').textContent = fmt(netWorth);
+    const liquidEl = document.getElementById('liquidNetWorth');
+    liquidEl.textContent = fmt(liquidNet);
+    liquidEl.style.color = liquidNet >= 0 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('cometaHero').textContent = fmt(pensionInvTotal);
+    renderInvestments();
+    renderProperties();
+    document.getElementById('finecoVal').textContent = fmt(d.fineco);
+    document.getElementById('bperVal').textContent = fmt(d.bper);
+    document.getElementById('revolutVal').textContent = fmt(d.revolut);
+
+    const pensionTotal = d.pensionEmp + d.pensionAz;
+    const pensionAnnual = pensionTotal * 12;
+    document.getElementById('salaryDisplay').textContent = fmt(d.salary) + '/mese';
+    document.getElementById('salarySplitDisplay').textContent = 'Fineco ' + fmt(d.salaryFineco) + ' · BPER ' + fmt(d.salaryBper);
+    document.getElementById('pensionEmpDisplay').textContent = fmt(d.pensionEmp) + '/mese';
+    document.getElementById('pensionAzDisplay').textContent = fmt(d.pensionAz) + '/mese';
+    document.getElementById('pensionTotalDisplay').textContent = fmt(pensionTotal) + '/mese';
+
+    const limit = PENSION_LIMIT;
+    const headroom = limit - pensionAnnual;
+    document.getElementById('pensionNote').innerHTML =
+      '📌 Contributi annui Cometa: ' + fmt(pensionAnnual) + ' · Limite deducibile 2026: ' + fmt(limit) +
+      ' · Spazio residuo: ' + fmt(headroom) + '/anno (~' + fmt(headroom / 12) + '/mese)';
+
+    document.getElementById('lastUpdatedDisplay').textContent = 'Aggiornato: ' + d.lastUpdated;
+
+    renderReview(d);
+    renderChat();
+
+    // Chart
+    let pensionIdx = 0, marketIdx = 0, propertyIdx = 0;
+    const investmentSegments = investments.map(inv => {
+      if (inv.type === 'pensione') {
+        return { label: inv.name, value: inv.value, color: PENSION_COLORS[pensionIdx++ % PENSION_COLORS.length] };
+      }
+      return { label: inv.name, value: inv.value, color: MARKET_COLORS[marketIdx++ % MARKET_COLORS.length] };
+    });
+    const propertySegments = properties.map(p => ({
+      label: p.name, value: p.value, color: PROPERTY_COLORS[propertyIdx++ % PROPERTY_COLORS.length],
+    }));
+    const segments = [
+      ...propertySegments,
+      ...investmentSegments,
+      { label: 'Fineco Cash', value: d.fineco, color: '#059669' },
+      { label: 'BPER Cash', value: d.bper, color: '#10b981' },
+      { label: 'Revolut', value: d.revolut, color: '#34d399' },
+    ].filter(x => x.value > 0);
+
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+    if (segments.length && totalAssets > 0) {
+      chartInstance = new Chart(document.getElementById('allocationChart'), {
+        type: 'doughnut',
+        data: {
+          labels: segments.map(x => x.label),
+          datasets: [{
+            data: segments.map(x => x.value),
+            backgroundColor: segments.map(x => x.color),
+            borderWidth: 2,
+            // Colore del bordo tra le fette = colore della card (--surface), non
+            // bianco fisso: così il bordo "sparisce" nello sfondo sia in tema
+            // chiaro che scuro invece di lasciare righe bianche su sfondo scuro.
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff',
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => ' ' + fmt(ctx.raw) + ' (' + ((ctx.raw / totalAssets) * 100).toFixed(1) + '%)'
+              }
+            }
+          },
+          cutout: '65%',
+        }
+      });
+
+      document.getElementById('chartLegend').innerHTML = segments.map(x =>
+        '<div class="legend-item">' +
+        '<div class="legend-dot" style="background:' + x.color + '"></div>' +
+        '<span>' + x.label + '</span>' +
+        '<span class="legend-pct">' + ((x.value / totalAssets) * 100).toFixed(0) + '%</span>' +
+        '</div>'
+      ).join('');
+    }
+  }
+
+  function openModal() {
+    const d = loadData();
+    ['fineco','bper','revolut']
+      .forEach(k => { document.getElementById('input-' + k).value = d[k]; });
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+  }
+
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  document.getElementById('expenseModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeExpenseModal();
+  });
+
+  document.getElementById('transferModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeTransferModal();
+  });
+
+  document.getElementById('investmentModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeInvestmentModal();
+  });
+
+  document.getElementById('accountBalanceModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeAccountBalanceModal();
+  });
+
+  document.getElementById('propertyModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closePropertyModal();
+  });
+
+  document.getElementById('flowModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeFlowModal();
+  });
+
+  document.getElementById('exportChoiceModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeExportChoiceModal();
+  });
+
+  migratePendingCcDueMonths();
+  applyMaturedCreditCardCharges();
+  applyRecurringMortgage();
+  renderInvestments();
+  renderProperties();
+  renderFlows();
+  render(loadData());
+  renderExpenses();
+  renderAnnualAnalysis();
+  renderTransfers();
+  renderMemory();
+  applyMemoryCollapse(loadMemoryCollapsed());
+  applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
+  updateSyncIndicator();
+</script>
+</body>
+</html>
