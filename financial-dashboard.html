@@ -544,8 +544,8 @@
   <div class="chat-input-row">
     <input type="file" id="chatFileInput" accept=".txt,.csv,.md" style="display:none;" onchange="handleChatFileSelect(event)">
     <button class="chat-attach-btn" onclick="document.getElementById('chatFileInput').click()" title="Allega documento di testo (.txt, .csv, .md)">📎</button>
-    <select class="chat-attach-select" id="chatInvestmentDocSelect" onchange="attachInvestmentDocToChat()" title="Allega un documento KID/KIID già salvato su un investimento" style="display:none;">
-      <option value="">📄 Allega KID…</option>
+    <select class="chat-attach-select" id="chatInvestmentDocSelect" onchange="attachInvestmentDocToChat()" title="Allega un documento KID/KIID o il piano di ammortamento del mutuo già salvati" style="display:none;">
+      <option value="">📄 Allega documento…</option>
     </select>
     <textarea class="chat-input" id="chatInput" rows="1" placeholder="Fai una domanda sulla tua situazione finanziaria..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendChat();}"></textarea>
     <button class="chat-send" id="chatSendBtn" onclick="sendChat()">Invia</button>
@@ -564,6 +564,15 @@
       </div>
     </div>
     <div id="investmentsList"></div>
+    <div class="expense-header" style="margin-top:14px;cursor:pointer;" onclick="toggleMortgageCollapse()">
+      <div class="section-title" style="margin-bottom:0;">🏦 Mutuo <span id="mortgageCollapseChevron" style="font-size:10px;color:var(--text-muted);">▸</span></div>
+      <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+        <button class="btn-icon-header" onclick="openMortgageModal()" title="Modifica dettagli mutuo">✏️</button>
+      </div>
+    </div>
+    <div id="mortgageBodyWrap" style="display:none;">
+      <div id="mortgageDetailsList"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -690,6 +699,73 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePropertyModal()">Annulla</button>
       <button class="btn-save" onclick="saveProperty()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modifica dettagli mutuo -->
+<div class="modal-overlay" id="mortgageModalOverlay">
+  <div class="modal">
+    <h2>🏦 Dettagli mutuo</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Istituto</label>
+        <input type="text" class="field-input" id="mortgage-bank" style="width:200px;" placeholder="es. BPER">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Tipo tasso</label>
+        <select class="field-input" id="mortgage-rate-type" style="width:200px;">
+          <option value="fisso">Fisso</option>
+          <option value="variabile">Variabile</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Tasso (%)</label>
+        <input type="number" class="field-input" id="mortgage-rate" step="0.01" min="0">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Rata mensile (€)</label>
+        <input type="number" class="field-input" id="mortgage-monthly" step="1" min="0">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Rate residue</label>
+        <input type="number" class="field-input" id="mortgage-remaining" step="1" min="0">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Giorno addebito</label>
+        <input type="number" class="field-input" id="mortgage-due-day" step="1" min="1" max="28">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Conto di addebito</label>
+        <select class="field-input" id="mortgage-account" style="width:200px;">
+          <option value="Fineco">Fineco</option>
+          <option value="BPER">BPER</option>
+          <option value="Revolut">Revolut</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Immobile collegato</label>
+        <select class="field-input" id="mortgage-property" style="width:200px;"></select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Residuo mutuo (€)</label>
+        <input type="number" class="field-input" id="mortgage-residual" step="1" min="0" placeholder="0 se nessuno">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Note (opz.)</label>
+        <input type="text" class="field-input" id="mortgage-notes" style="width:200px;" placeholder="es. surroga valutata a gen 2027">
+      </div>
+    </div>
+    <div class="modal-section" id="mortgageDocumentSection">
+      <div class="modal-section-title">Piano di ammortamento (opz.)</div>
+      <input type="file" id="mortgageDocFileInput" accept=".txt,.md" style="display:none;" onchange="handleMortgageDocSelect(event)">
+      <div id="mortgageDocChip" style="margin-bottom:8px;"></div>
+      <button class="btn-cancel" type="button" onclick="document.getElementById('mortgageDocFileInput').click()">📎 Allega file (.txt, .md)</button>
+      <div class="chat-attach-note" style="margin-top:6px;">Solo file di testo semplice (.txt, .md) — es. una tabella markdown con data/rata/capitale/interessi/residuo. Si allega poi alla chat con "📄 Allega documento…", esattamente come il KID di un investimento.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeMortgageModal()">Annulla</button>
+      <button class="btn-save" onclick="saveMortgageDetails()">Salva</button>
     </div>
   </div>
 </div>
@@ -1259,7 +1335,6 @@
 
   const STORAGE_KEY = 'skender_fin_v5';
   const CHAT_STORAGE_KEY = 'skender_fin_chat_v1';
-  const MORTGAGE_MONTHLY = 595;
   const PENSION_LIMIT = 5300;
 
   // Tema chiaro/scuro: preferenza salvata in dati.json, altrimenti si segue
@@ -1814,23 +1889,34 @@
     populateChatInvestmentDocSelect();
   }
 
-  // Selettore "📄 Allega KID…" nella chat: elenca solo gli investimenti che hanno
-  // un documento salvato, e lo mette in staging come allegato chat quando scelto —
-  // esattamente come se l'utente avesse caricato quel file da disco con 📎.
-  // Nessuna inclusione automatica: il consulente lo vede solo se lo alleghi qui.
+  // Selettore "📄 Allega documento…" nella chat: elenca i documenti KID/KIID
+  // salvati sugli investimenti di mercato e, se presente, il piano di
+  // ammortamento del mutuo (vedi sezione Mutuo più sotto), e li mette in
+  // staging come allegato chat quando scelti — esattamente come se l'utente
+  // avesse caricato quel file da disco con 📎. Nessuna inclusione automatica:
+  // il consulente li vede solo se li alleghi qui.
   function populateChatInvestmentDocSelect() {
     const sel = document.getElementById('chatInvestmentDocSelect');
     if (!sel) return;
     const withDocs = investments.filter(i => i.document);
-    sel.innerHTML = '<option value="">📄 Allega KID…</option>' +
+    const hasMortgageDoc = !!(mortgage.document && mortgage.document.content);
+    sel.innerHTML = '<option value="">📄 Allega documento…</option>' +
+      (hasMortgageDoc ? '<option value="__mortgage_plan__">🏦 ' + escapeHtml(mortgage.document.name) + '</option>' : '') +
       withDocs.map(i => '<option value="' + i.id + '">' + escapeHtml(i.name) + '</option>').join('');
-    sel.style.display = withDocs.length ? '' : 'none';
+    sel.style.display = (withDocs.length || hasMortgageDoc) ? '' : 'none';
   }
 
   function attachInvestmentDocToChat() {
     const sel = document.getElementById('chatInvestmentDocSelect');
     const id = sel.value;
     if (!id) return;
+    if (id === '__mortgage_plan__') {
+      if (!mortgage.document) { sel.value = ''; return; }
+      stagedAttachment = { name: mortgage.document.name, content: mortgage.document.content };
+      renderAttachmentChip();
+      sel.value = '';
+      return;
+    }
     const inv = investments.find(i => i.id === id);
     if (!inv || !inv.document) { sel.value = ''; return; }
     stagedAttachment = { name: inv.document.name, content: inv.document.content };
@@ -1912,6 +1998,214 @@
   function propertiesTotal() { return properties.reduce((s, p) => s + (p.value || 0), 0); }
   function mortgageTotal() { return properties.reduce((s, p) => s + (p.mortgage || 0), 0); }
 
+  // ===== Mutuo: dettagli completi (tutti modificabili) + piano di =====
+  // ammortamento allegabile come documento, esattamente come il KID/KIID di un
+  // investimento di mercato. Il residuo resta quello dell'immobile collegato
+  // (property.mortgage, unica fonte di verità per equity/patrimonio netto):
+  // qui lo si modifica tramite un selettore "Immobile collegato" invece di
+  // duplicarlo in un campo separato.
+  const MORTGAGE_STORAGE_KEY = 'skender_fin_mortgage_v1';
+  const MORTGAGE_COLLAPSE_KEY = 'skender_fin_mortgage_collapsed_v1';
+
+  function loadMortgageCollapsed() {
+    try {
+      const saved = store.getItem(MORTGAGE_COLLAPSE_KEY);
+      if (saved === 'true' || saved === 'false') return saved === 'true';
+    } catch {}
+    return true; // default: chiuso
+  }
+
+  function applyMortgageCollapse(collapsed) {
+    const wrap = document.getElementById('mortgageBodyWrap');
+    const chevron = document.getElementById('mortgageCollapseChevron');
+    if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
+    if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
+    try { store.setItem(MORTGAGE_COLLAPSE_KEY, String(collapsed)); } catch {}
+  }
+
+  function toggleMortgageCollapse() {
+    const wrap = document.getElementById('mortgageBodyWrap');
+    const isCollapsed = !wrap || wrap.style.display === 'none';
+    applyMortgageCollapse(!isCollapsed);
+  }
+
+  // Se esiste ancora la nota markdown salvata da una versione precedente della
+  // sezione Mutuo (skender_fin_mortgage_plan_v1, testo libero), la recupera e la
+  // trasforma nel documento allegabile — nessun dato dell'utente va perso.
+  const LEGACY_MORTGAGE_PLAN_KEY = 'skender_fin_mortgage_plan_v1';
+
+  function migrateLegacyMortgage() {
+    const existing = store.getItem(MORTGAGE_STORAGE_KEY);
+    if (existing) {
+      try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
+    }
+    const linked = properties.find(p => (p.mortgage || 0) > 0);
+    let legacyDocument = null;
+    try {
+      const legacyPlan = store.getItem(LEGACY_MORTGAGE_PLAN_KEY);
+      if (legacyPlan && legacyPlan.trim()) {
+        legacyDocument = { name: 'Piano di ammortamento mutuo.md', content: legacyPlan };
+      }
+    } catch { /* nessuna nota legacy */ }
+    const obj = {
+      bank: 'BPER',
+      rateType: 'fisso',
+      rate: 0.8,
+      monthly: 595,
+      remainingInstallments: 34,
+      dueDay: 15,
+      account: 'BPER',
+      propertyId: linked ? linked.id : null,
+      notes: '',
+      document: legacyDocument,
+    };
+    store.setItem(MORTGAGE_STORAGE_KEY, JSON.stringify(obj));
+    return obj;
+  }
+
+  function saveMortgage(obj) {
+    store.setItem(MORTGAGE_STORAGE_KEY, JSON.stringify(obj));
+  }
+
+  let mortgage = migrateLegacyMortgage();
+  let stagedMortgageDoc = null; // { name, content } in attesa di salvataggio, oppure null
+
+  function mortgageLinkedProperty() {
+    return properties.find(p => p.id === mortgage.propertyId) || null;
+  }
+
+  function mortgageResidual() {
+    const p = mortgageLinkedProperty();
+    return p ? (p.mortgage || 0) : 0;
+  }
+
+  function handleMortgageDocSelect(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!/\.(txt|md)$/i.test(file.name)) {
+      alert('Puoi allegare solo file di testo semplice (.txt, .md). Il PDF non è supportato: il consulente AI può leggere solo testo.');
+      return;
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      alert('File troppo grande (max 2MB).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      stagedMortgageDoc = { name: file.name, content: String(e.target.result || '') };
+      renderMortgageDocChip();
+    };
+    reader.onerror = function() {
+      alert('Errore nella lettura del file.');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderMortgageDocChip() {
+    const el = document.getElementById('mortgageDocChip');
+    if (!el) return;
+    if (!stagedMortgageDoc) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML =
+      '<span class="chat-attach-chip">📄 ' + escapeHtml(stagedMortgageDoc.name) +
+      ' (' + stagedMortgageDoc.content.length.toLocaleString('it-IT') + ' caratteri)' +
+      '<button onclick="removeMortgageDoc()" title="Rimuovi documento">✕ Rimuovi</button></span>';
+  }
+
+  function removeMortgageDoc() {
+    stagedMortgageDoc = null;
+    renderMortgageDocChip();
+  }
+
+  function populateMortgagePropertySelect() {
+    const sel = document.getElementById('mortgage-property');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Nessuno (nessun residuo tracciato)</option>' +
+      properties.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    sel.value = mortgage.propertyId || '';
+  }
+
+  function openMortgageModal() {
+    populateMortgagePropertySelect();
+    document.getElementById('mortgage-bank').value = mortgage.bank || '';
+    document.getElementById('mortgage-rate-type').value = mortgage.rateType || 'fisso';
+    document.getElementById('mortgage-rate').value = mortgage.rate != null ? mortgage.rate : '';
+    document.getElementById('mortgage-monthly').value = mortgage.monthly != null ? mortgage.monthly : '';
+    document.getElementById('mortgage-remaining').value = mortgage.remainingInstallments != null ? mortgage.remainingInstallments : '';
+    document.getElementById('mortgage-due-day').value = mortgage.dueDay != null ? mortgage.dueDay : '';
+    document.getElementById('mortgage-account').value = mortgage.account || 'BPER';
+    document.getElementById('mortgage-residual').value = mortgageResidual();
+    document.getElementById('mortgage-notes').value = mortgage.notes || '';
+    stagedMortgageDoc = mortgage.document || null;
+    renderMortgageDocChip();
+    document.getElementById('mortgageModalOverlay').classList.add('open');
+  }
+
+  function closeMortgageModal() {
+    document.getElementById('mortgageModalOverlay').classList.remove('open');
+    stagedMortgageDoc = null;
+  }
+
+  function saveMortgageDetails() {
+    const monthly = parseFloat(document.getElementById('mortgage-monthly').value);
+    if (isNaN(monthly) || monthly < 0) { alert('Inserisci una rata mensile valida (maggiore o uguale a zero).'); return; }
+    const rate = parseFloat(document.getElementById('mortgage-rate').value);
+    const remaining = parseInt(document.getElementById('mortgage-remaining').value, 10);
+    const dueDay = parseInt(document.getElementById('mortgage-due-day').value, 10);
+    const residual = parseFloat(document.getElementById('mortgage-residual').value);
+    const propertyId = document.getElementById('mortgage-property').value || null;
+
+    mortgage.bank = document.getElementById('mortgage-bank').value.trim();
+    mortgage.rateType = document.getElementById('mortgage-rate-type').value;
+    mortgage.rate = isNaN(rate) ? 0 : rate;
+    mortgage.monthly = monthly;
+    mortgage.remainingInstallments = isNaN(remaining) ? 0 : remaining;
+    mortgage.dueDay = isNaN(dueDay) ? 15 : Math.min(28, Math.max(1, dueDay));
+    mortgage.account = document.getElementById('mortgage-account').value;
+    mortgage.propertyId = propertyId;
+    mortgage.notes = document.getElementById('mortgage-notes').value.trim();
+    mortgage.document = stagedMortgageDoc || null;
+
+    // Il residuo è tracciato sull'immobile collegato (unica fonte di verità per
+    // equity/patrimonio netto): modificarlo qui scrive direttamente su quello.
+    if (propertyId && !isNaN(residual) && residual >= 0) {
+      const p = properties.find(x => x.id === propertyId);
+      if (p) { p.mortgage = residual; saveProperties(properties); }
+    }
+
+    saveMortgage(mortgage);
+    touchLastModified();
+    closeMortgageModal();
+    renderMortgageDetails();
+    renderProperties();
+    render(loadData());
+  }
+
+  function renderMortgageDetails() {
+    const wrap = document.getElementById('mortgageDetailsList');
+    if (!wrap) return;
+    const linked = mortgageLinkedProperty();
+    const rateLabel = mortgage.rateType === 'variabile' ? 'variabile' : 'fisso';
+    const rows = [
+      ['Istituto', mortgage.bank || '—'],
+      ['Tasso', (mortgage.rate != null ? mortgage.rate.toLocaleString('it-IT') : '0') + '% ' + rateLabel],
+      ['Rata mensile', fmt(mortgage.monthly || 0)],
+      ['Rate residue', mortgage.remainingInstallments != null ? String(mortgage.remainingInstallments) : '—'],
+      ['Addebito', 'il ' + (mortgage.dueDay || 15) + ' del mese su ' + (mortgage.account || '—')],
+      ['Immobile collegato', linked ? linked.name : 'nessuno'],
+      ['Residuo', fmt(mortgageResidual())],
+    ];
+    wrap.innerHTML = rows.map(function(r) {
+      return '<div class="line-item"><div class="line-label">' + escapeHtml(r[0]) + '</div><div class="line-value gray">' + escapeHtml(r[1]) + '</div></div>';
+    }).join('') +
+      (mortgage.document ? '<div class="line-sublabel" style="padding:4px 0;">📄 ' + escapeHtml(mortgage.document.name) + ' (allegabile in chat)</div>' : '') +
+      (mortgage.notes ? '<div class="chat-context-note" style="white-space:pre-wrap;margin-top:8px;">' + escapeHtml(mortgage.notes) + '</div>' : '');
+    populateChatInvestmentDocSelect();
+  }
+
   function openPropertyModal(id) {
     editingPropertyId = id || null;
     const title = document.getElementById('propertyModalTitle');
@@ -1992,6 +2286,7 @@
     const wrap = document.getElementById('propertiesList');
     if (!properties.length) {
       wrap.innerHTML = '<div class="expense-empty">Nessun immobile registrato. Usa "+" per aggiungerne uno.</div>';
+      renderMortgageDetails();
       return;
     }
     wrap.innerHTML = properties.map(p => {
@@ -2013,6 +2308,7 @@
         '</div>' +
       '</div>';
     }).join('');
+    renderMortgageDetails();
   }
 
   function buildReview(d) {
@@ -2028,7 +2324,7 @@
     const liquidNet = liquidAssets - mortgageTot;
     const illiquidShare = totalAssets > 0 ? ((houseTotal + pensionTotal) / totalAssets) * 100 : 0;
     const emergencyMonths = d.salary > 0 ? liquidCash / d.salary : 0;
-    const emergencyVsMortgage = MORTGAGE_MONTHLY > 0 ? liquidCash / MORTGAGE_MONTHLY : 0;
+    const emergencyVsMortgage = mortgage.monthly > 0 ? liquidCash / mortgage.monthly : 0;
     const pensionAnnual = (d.pensionEmp + d.pensionAz) * 12;
     const pensionHeadroom = PENSION_LIMIT - pensionAnnual;
     const equity = houseTotal - mortgageTot;
@@ -2042,8 +2338,13 @@
 
     // Mutuo
     if (mortgageTot > 0) {
-      positives.push('Il mutuo BPER al tasso fisso dello 0,8% è una condizione estremamente favorevole rispetto ai livelli attuali di mercato: è un debito "a buon mercato" che, nella maggior parte degli scenari, conviene mantenere fino a scadenza piuttosto che estinguere anticipatamente.');
-      long.push('Mantieni il mutuo fino a naturale scadenza: al tasso attuale (0,8%), destinare liquidità extra all\'estinzione anticipata ha quasi sempre un costo-opportunità superiore rispetto a investirla o lasciarla a cuscinetto.');
+      const rateLabel = mortgage.rate.toLocaleString('it-IT') + '%';
+      if (mortgage.rate <= 2) {
+        positives.push('Il mutuo ' + mortgage.bank + ' al tasso ' + mortgage.rateType + ' dello ' + rateLabel + ' è una condizione estremamente favorevole rispetto ai livelli attuali di mercato: è un debito "a buon mercato" che, nella maggior parte degli scenari, conviene mantenere fino a scadenza piuttosto che estinguere anticipatamente.');
+        long.push('Mantieni il mutuo fino a naturale scadenza: al tasso attuale (' + rateLabel + '), destinare liquidità extra all\'estinzione anticipata ha quasi sempre un costo-opportunità superiore rispetto a investirla o lasciarla a cuscinetto.');
+      } else {
+        long.push('Il mutuo ' + mortgage.bank + ' è al tasso ' + mortgage.rateType + ' del ' + rateLabel + ': valuta caso per caso se un\'estinzione anticipata o un\'eventuale rinegoziazione convengano rispetto a investire la stessa liquidità, dato che qui il costo del debito non è trascurabile come nel caso di tassi molto bassi.');
+      }
     }
 
     // Equity immobiliare
@@ -2073,7 +2374,7 @@
 
     // Copertura rata mutuo
     if (mortgageTot > 0 && emergencyVsMortgage < 3) {
-      negatives.push('La liquidità immediata copre circa ' + emergencyVsMortgage.toFixed(1) + ' rate del mutuo (su una rata di ' + fmt(MORTGAGE_MONTHLY) + '/mese): un margine ridotto per assorbire un imprevisto che riduca temporaneamente il reddito.');
+      negatives.push('La liquidità immediata copre circa ' + emergencyVsMortgage.toFixed(1) + ' rate del mutuo (su una rata di ' + fmt(mortgage.monthly) + '/mese): un margine ridotto per assorbire un imprevisto che riduca temporaneamente il reddito.');
     }
 
     // Concentrazione in asset illiquidi
@@ -2314,35 +2615,40 @@
     return changed;
   }
 
-  // Addebito automatico ricorrente della rata mutuo su BPER: dal giorno 15 di
-  // ogni mese (o alla prima apertura successiva se la dashboard non è stata
-  // aperta esattamente quel giorno), genera un vero movimento "Addebito diretto
-  // (RID/SDD)" — visibile in Movimenti, nell'analisi annuale e nell'export, come
-  // qualunque altra spesa — invece di un aggiustamento silenzioso del saldo.
+  // Addebito automatico ricorrente della rata mutuo: dal giorno di addebito
+  // configurato nella sezione "Mutuo" (dueDay, default 15) di ogni mese (o alla
+  // prima apertura successiva se la dashboard non è stata aperta esattamente
+  // quel giorno), genera un vero movimento "Addebito diretto (RID/SDD)" —
+  // visibile in Movimenti, nell'analisi annuale e nell'export, come qualunque
+  // altra spesa — invece di un aggiustamento silenzioso del saldo.
   // Genera al massimo UNA rata per mese corrente: nessun recupero retroattivo di
   // mesi passati, per non alterare mesi già chiusi/registrati diversamente.
   function applyRecurringMortgage() {
+    if (!mortgage.monthly || mortgage.monthly <= 0) return false; // nessuna rata configurata
+
     const nowKey = currentMonthKey();
     const todayIso = todayIsoLocal();
-    const threshold = nowKey + '-15';
-    if (todayIso < threshold) return false; // non ancora il 15 di questo mese
+    const dueDay = mortgage.dueDay || 15;
+    const threshold = nowKey + '-' + String(dueDay).padStart(2, '0');
+    if (todayIso < threshold) return false; // non ancora il giorno di addebito di questo mese
 
     const alreadyGenerated = expenses.some(e => e.autoMortgage && e.date && e.date.slice(0, 7) === nowKey);
     if (alreadyGenerated) return false;
 
+    const account = mortgage.account || 'BPER';
     const entry = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       date: threshold,
       direction: 'addebito',
-      account: 'BPER',
+      account: account,
       movement: 'rid',
       category: 'Mutuo',
       description: 'Rata mutuo (generata automaticamente)',
-      amount: MORTGAGE_MONTHLY,
+      amount: mortgage.monthly,
       autoMortgage: true,
     };
 
-    adjustAccountBalance('BPER', -MORTGAGE_MONTHLY);
+    adjustAccountBalance(account, -mortgage.monthly);
     expenses.push(entry);
     expenses.sort((a, b) => b.date.localeCompare(a.date));
     saveExpenses(expenses);
@@ -3448,10 +3754,14 @@
     return [
       '- Patrimonio netto totale: ' + fmt(netWorth),
       '- Patrimonio liquido netto (liquidità+investimenti di mercato - mutui): ' + fmt(liquidNet),
-      '- Immobili: ' + (properties.length ? properties.map(p => p.name + ' ' + fmt(p.value) + (p.mortgage > 0 ? ' (mutuo residuo ' + fmt(p.mortgage) + ')' : ' (nessun mutuo)')).join(', ') + ' — valore totale ' + fmt(houseTotal) + ', mutui residui totali ' + fmt(mortgageTot) + ' (mutuo su Via Fiorentina: fisso 0,8%, rata ' + fmt(MORTGAGE_MONTHLY) + '/mese, 34 rate residue), equity totale ' + fmt(houseTotal - mortgageTot) : 'nessuno registrato'),
+      '- Immobili: ' + (properties.length ? properties.map(p => p.name + ' ' + fmt(p.value) + (p.mortgage > 0 ? ' (mutuo residuo ' + fmt(p.mortgage) + ')' : ' (nessun mutuo)')).join(', ') + ' — valore totale ' + fmt(houseTotal) + ', mutui residui totali ' + fmt(mortgageTot) : 'nessuno registrato'),
+      '- Mutuo: ' + (mortgageTot > 0 ? mortgage.bank + ', tasso ' + mortgage.rateType + ' ' + mortgage.rate.toLocaleString('it-IT') + '%, rata ' + fmt(mortgage.monthly) + '/mese, ' + (mortgage.remainingInstallments || 0) + ' rate residue, addebito il ' + (mortgage.dueDay || 15) + ' del mese su ' + mortgage.account + (mortgage.notes ? ' — note: ' + mortgage.notes : '') : 'nessun mutuo registrato'),
       '- Investimenti pensione/TFR (illiquidi fino a pensionamento/fine rapporto): ' + (pensionList.length ? pensionList.map(i => i.name + ' ' + fmt(i.value)).join(', ') + ' (totale ' + fmt(pensionTotal) + ')' : 'nessuno registrato'),
       '- Investimenti di mercato (liquidi a riscatto/vendita): ' + (marketList.length ? marketList.map(i => i.name + ' ' + fmt(i.value)).join(', ') + ' (totale ' + fmt(marketTotal) + ')' : 'nessuno registrato'),
-      '- Documenti KID/KIID disponibili (NON allegati automaticamente — Skender può allegarli esplicitamente alla domanda con il selettore "📄 Allega KID…" se vuole che tu li legga): ' + (investments.some(i => i.document) ? investments.filter(i => i.document).map(i => i.name).join(', ') : 'nessuno allegato'),
+      '- Documenti disponibili (NON allegati automaticamente — Skender può allegarli esplicitamente alla domanda con il selettore "📄 Allega documento…" se vuole che tu li legga): ' + [
+        investments.some(i => i.document) ? 'KID/KIID di ' + investments.filter(i => i.document).map(i => i.name).join(', ') : null,
+        mortgage.document ? 'piano di ammortamento del mutuo (' + mortgage.document.name + ')' : null,
+      ].filter(Boolean).join(' · ') || 'nessuno allegato',
       '- Saldo attuale conti: Fineco ' + fmt(d.fineco) + ', BPER ' + fmt(d.bper) + ', Revolut ' + fmt(d.revolut) + ' (liquidità totale ' + fmt(liquidCash) + ')',
       '- Stipendio netto mensile: totale ' + fmt(d.salary) + ' (accredito su Fineco: ' + fmt(d.salaryFineco) + ', accredito su BPER: ' + fmt(d.salaryBper) + ')',
       '- Contributi mensili a Cometa: dipendente ' + fmt(d.pensionEmp) + ' + azienda ' + fmt(d.pensionAz) + ' = ' + fmt(d.pensionEmp + d.pensionAz) + '/mese (' + fmt(pensionAnnual) + '/anno, limite deducibile 2026: ' + fmt(PENSION_LIMIT) + ')',
@@ -4365,6 +4675,10 @@
     if (e.target === this) closePropertyModal();
   });
 
+  document.getElementById('mortgageModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeMortgageModal();
+  });
+
   document.getElementById('flowModalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeFlowModal();
   });
@@ -4385,6 +4699,7 @@
   renderTransfers();
   renderMemory();
   applyMemoryCollapse(loadMemoryCollapsed());
+  applyMortgageCollapse(loadMortgageCollapsed());
   applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
   updateSyncIndicator();
   applyApiKeysCollapse(loadApiKeysCollapsed());
