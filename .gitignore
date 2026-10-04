@@ -7,3 +7,6 @@ ai-config.json.tmp
 __pycache__/
 .venv/
 .DS_Store
+
+# Estratti conto reali (IBAN, nomi, movimenti): mai nel repository
+esempi-estratti/

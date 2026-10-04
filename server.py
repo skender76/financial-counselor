@@ -18,6 +18,11 @@ Cosa fa:
     POST /api/ai-keys -> {"action": "add" | "update" | "delete" | "activate", ...}
   Le chiavi (Anthropic, OpenAI, Gemini) si gestiscono dalla dashboard e sono
   salvate in ai-config.json: vedi ai_providers.py.
+- Importazione estratti conto (Revolut, BPER, Fineco):
+    POST /api/import-statement -> {account, kind, filename, content_b64, since?}: legge
+                       il file (xlrd/openpyxl per gli Excel) e restituisce
+                       {movements, ignored, summary} come anteprima; NON scrive nulla.
+                       Vedi statement_import.py.
 - Chiusura ordinata (attende la fine di un eventuale salvataggio di dati.json):
     POST /api/shutdown (pulsante "Chiudi dashboard"), Ctrl+C, oppure la
     chiusura della finestra del Terminale.
@@ -38,6 +43,8 @@ I dati vengono scritti in dati.json, nella STESSA cartella di questo script:
 backup (Dropbox, iCloud, chiavetta USB, ecc.) in qualunque momento.
 """
 
+import base64
+import binascii
 import errno
 import hashlib
 import json
@@ -49,6 +56,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import ai_providers
+import statement_import
 
 PORT = 8765
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -210,6 +218,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/ai-keys':
             self._handle_ai_keys()
             return
+        if self.path == '/api/import-statement':
+            self._handle_import_statement()
+            return
         if self.path != '/api/data':
             self.send_error(404, 'Percorso non gestito: ' + self.path)
             return
@@ -254,6 +265,37 @@ class Handler(BaseHTTPRequestHandler):
             return
         except OSError as e:
             self._send_json({'status': 'error', 'message': 'Errore scrivendo ai-config.json: %s' % e}, status=500)
+            return
+        result['status'] = 'ok'
+        self._send_json(result)
+
+    def _handle_import_statement(self):
+        # Il file arriva in base64 dentro un JSON (come tutte le POST, che devono
+        # essere application/json). Il limite del corpo tiene conto del +33% del base64.
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if length > statement_import.MAX_FILE_BYTES * 4 // 3 + 4096:
+                self._send_json({'status': 'error', 'message': 'File troppo grande.'}, status=413)
+                return
+            body = json.loads(self.rfile.read(length).decode('utf-8')) if length > 0 else {}
+            if not isinstance(body, dict):
+                raise ValueError('Il corpo della richiesta deve essere un oggetto JSON.')
+            try:
+                content = base64.b64decode(body.get('content_b64') or '', validate=True)
+            except (binascii.Error, ValueError):
+                raise ValueError('Contenuto del file non valido.')
+            result = statement_import.parse_statement(
+                body.get('account'), body.get('kind'), body.get('filename'), content,
+                since=body.get('since') or statement_import.IMPORT_START_DATE)
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send_json({'status': 'error', 'message': str(e)}, status=400)
+            return
+        except statement_import.ImportError_ as e:
+            self._send_json({'status': 'error', 'message': str(e)}, status=e.status)
+            return
+        except Exception as e:
+            print('Errore imprevisto in /api/import-statement: %r' % e, file=sys.stderr)
+            self._send_json({'status': 'error', 'message': 'errore imprevisto leggendo il file: %s' % e}, status=500)
             return
         result['status'] = 'ok'
         self._send_json(result)

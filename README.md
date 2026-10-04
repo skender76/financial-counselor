@@ -17,12 +17,14 @@ Dashboard di finanza personale per un singolo utente, con consulente AI integrat
 - Python 3
 - Un browser moderno (Chart.js è caricato da CDN)
 - L'SDK del fornitore AI scelto, solo se vuoi usare la chat: `anthropic`, `openai` o `google-genai`
+- `xlrd` e `openpyxl`, solo se vuoi importare gli estratti conto BPER (.xls) e Fineco (.xlsx)
 
 ## Avvio
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install anthropic   # oppure openai / google-genai
+.venv/bin/python -m pip install xlrd openpyxl   # estratti conto BPER / Fineco
 .venv/bin/python server.py
 ```
 

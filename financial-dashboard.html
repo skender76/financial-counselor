@@ -446,6 +446,7 @@
     <button class="btn-icon-header" id="themeToggleBtn" onclick="toggleTheme()" title="Cambia tema chiaro/scuro">🌙</button>
     <input type="file" id="importFileInput" accept=".csv" style="display:none;" onchange="handleImportFileSelect(event)">
     <button class="btn-edit" onclick="document.getElementById('importFileInput').click()" title="Importa un file di backup generato da questa dashboard">📤 Importa backup</button>
+    <button class="btn-edit" onclick="openStatementModal()" title="Carica l'estratto conto di Revolut, BPER o Fineco">📑 Importa estratto conto</button>
     <button class="btn-edit" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
     <button class="btn-edit" onclick="openModal()">✏️ Aggiorna dati</button>
     <button class="btn-edit" onclick="shutdownDashboard()" title="Salva i dati e ferma il server locale della dashboard">⏻ Chiudi dashboard</button>
@@ -1004,6 +1005,39 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="statementModalOverlay">
+  <div class="modal" style="width:980px;">
+    <h2>📑 Importa estratto conto</h2>
+    <div class="modal-section">
+      <div class="field-row">
+        <label class="field-label">Conto</label>
+        <select class="field-input" id="statement-account" style="width:200px;" onchange="onStatementAccountChange()">
+          <option value="Revolut">Revolut</option>
+          <option value="BPER">BPER</option>
+          <option value="Fineco">Fineco</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">Tipo di file</label>
+        <select class="field-input" id="statement-kind" style="width:200px;">
+          <option value="conto">Estratto conto (movimenti)</option>
+          <option value="carta">Carta di credito (solo BPER)</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label">File <span id="statement-ext-hint" style="color:var(--text-muted);"></span></label>
+        <input type="file" id="statement-file" style="width:260px;font-size:12px;">
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);">Il file viene letto dal server locale e confrontato con i movimenti registrati: vedrai una revisione prima di salvare. Si importa dal 1° gennaio 2026; i saldi dei conti non cambiano.</div>
+    </div>
+    <div id="statementResult"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeStatementModal()">Chiudi</button>
+      <button class="btn-save" id="statementAnalyzeBtn" onclick="analyzeStatement()">Analizza file</button>
+    </div>
+  </div>
+</div>
+
 <!-- Monthly Flows -->
 <div class="card">
   <div class="expense-header">
@@ -1313,6 +1347,508 @@
       '<p style="color:var(--text-secondary);">' +
       (saved ? 'I dati sono stati salvati in dati.json.' : 'Attenzione: l\'ultimo salvataggio su dati.json non è riuscito.') +
       ' Il server locale è stato fermato: puoi chiudere questa scheda.<br>Per riaprire la dashboard, fai doppio click su avvia-dashboard.command.</p></div>';
+  }
+
+  // ===== Importazione estratti conto (Revolut, BPER, Fineco) =====
+  // Flusso: server.py legge il file (/api/import-statement) e restituisce i
+  // movimenti normalizzati; qui si confrontano con quelli registrati, si
+  // propongono le categorie e si mostra una schermata di revisione. Solo alla
+  // conferma si scrive in dati.json.
+  // - Il file è la fonte di verità nella sua finestra di date: un movimento
+  //   registrato che corrisponde (stesso conto, direzione, importo, data ±3 giorni)
+  //   viene SOSTITUITO; uno nuovo viene aggiunto; uno registrato ma assente dal
+  //   file viene segnalato per revisione (mai cancellato in automatico).
+  // - I saldi dei conti NON cambiano: le voci importate hanno noBalance:true,
+  //   quindi eliminarle in seguito non storna nulla; le spese carta importate
+  //   hanno ccApplied:true perché il regolamento è già nell'estratto conto.
+  // - Giroconti tra i tuoi conti: abbinati per importo uguale e opposto (±3 giorni)
+  //   e registrati in "Trasferimenti" al posto delle due gambe.
+  // - Cambi valuta Revolut e regolamenti carta BPER non sono spese: ignorati.
+  const STATEMENT_EXTENSIONS = { Revolut: '.csv', BPER: '.xls', Fineco: '.xlsx' };
+  const STATEMENT_START_DATE = '2026-01-01';
+  const STATEMENT_MATCH_DAYS = 3;
+  const STATEMENT_AI_BATCH = 40;
+  // Categorie considerate "non impostate": se il movimento registrato ha una di
+  // queste, la categoria proposta dall'AI la sostituisce; altrimenti resta la tua.
+  const STATEMENT_UNSET_CATEGORIES = ['Varie', 'Altro', 'Altro reddito'];
+  const CATEGORY_RULES_KEY = 'skender_fin_category_rules_v1';
+  let statementSession = null; // { data, items, flagged, covered, ignored, busy }
+  let categoryRules = null;    // { chiaveNormalizzata: categoria }, imparate dalle importazioni
+
+  function loadCategoryRules() {
+    if (categoryRules) return categoryRules;
+    try {
+      const s = store.getItem(CATEGORY_RULES_KEY);
+      categoryRules = s ? JSON.parse(s) : {};
+    } catch { categoryRules = {}; }
+    return categoryRules;
+  }
+
+  function openStatementModal() {
+    document.getElementById('statement-file').value = '';
+    document.getElementById('statementResult').innerHTML = '';
+    document.getElementById('statementAnalyzeBtn').disabled = false;
+    statementSession = null;
+    onStatementAccountChange();
+    document.getElementById('statementModalOverlay').classList.add('open');
+  }
+
+  function closeStatementModal() {
+    if (statementSession && statementSession.busy) return;
+    document.getElementById('statementModalOverlay').classList.remove('open');
+  }
+
+  function onStatementAccountChange() {
+    const account = document.getElementById('statement-account').value;
+    const ext = STATEMENT_EXTENSIONS[account];
+    document.getElementById('statement-file').accept = ext;
+    document.getElementById('statement-ext-hint').textContent = '(' + ext + ')';
+    // La carta di credito è gestita solo per BPER.
+    const kindSel = document.getElementById('statement-kind');
+    const cardOpt = kindSel.querySelector('option[value="carta"]');
+    cardOpt.disabled = account !== 'BPER';
+    if (cardOpt.disabled && kindSel.value === 'carta') kindSel.value = 'conto';
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(new Error('Impossibile leggere il file selezionato.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ---- utilità di confronto
+
+  function dayDiff(a, b) {
+    const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+    return Math.abs(t(a) - t(b)) / 86400000;
+  }
+
+  function descTokens(s) {
+    return new Set(String(s || '').toLowerCase().split(/[^a-z0-9àèéìòù]+/).filter(t => t.length >= 3));
+  }
+
+  function descSimilarity(a, b) {
+    const ta = descTokens(a), tb = descTokens(b);
+    if (!ta.size || !tb.size) return 0;
+    let common = 0;
+    ta.forEach(t => { if (tb.has(t)) common++; });
+    return common / (ta.size + tb.size - common);
+  }
+
+  // Chiave per le regole di categoria: le prime parole "pulite" della descrizione
+  // (senza numeri, riferimenti e punteggiatura) + la direzione.
+  function categoryRuleKey(m) {
+    const words = String(m.description || '').toLowerCase().replace(/[^a-zà-ù\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+    return m.direction + '|' + words.slice(0, 4).join(' ');
+  }
+
+  function statementCategories(direction) {
+    const groups = direction === 'accredito' ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
+    return Object.values(groups).flat().filter(c => c !== 'Varie');
+  }
+
+  // Categoria certa dedotta dal tipo di movimento: niente AI né regole.
+  function deterministicCategory(m) {
+    const credit = m.direction === 'accredito';
+    if (m.tag === 'stipendio') return 'Stipendio';
+    if (m.tag === 'mutuo') return 'Mutuo';
+    if (m.tag === 'imposte') return 'Tasse (TARI, IMU, ecc.)';
+    if (m.tag === 'spese_bancarie') return credit ? 'Rimborso' : 'Spese bancarie';
+    if (m.tag === 'investimento') return credit ? 'Interessi/Rendimenti' : 'Spese investimento';
+    if (m.movement === 'ritiro_contanti') return 'Ritiro contanti';
+    if (m.tag === 'possibile_giroconto') return credit ? 'Altro reddito' : 'Altro';
+    return null;
+  }
+
+  // ---- riconciliazione con i movimenti registrati
+
+  function reconcileStatement(data) {
+    const s = data.summary;
+    const isCard = s.kind === 'carta';
+    const registered = expenses.filter(e =>
+      e.account === s.account && e.date >= s.window_from && e.date <= s.window_to &&
+      ((e.movement === 'carta_credito') === isCard));
+
+    const pairs = [];
+    data.movements.forEach((m, mi) => registered.forEach(e => {
+      if ((e.direction || 'addebito') !== m.direction) return;
+      if (Math.abs(e.amount - m.amount) > 0.005) return;
+      const dd = dayDiff(e.date, m.date);
+      if (dd > STATEMENT_MATCH_DAYS) return;
+      pairs.push({ mi: mi, e: e, score: dd * 10 + (e.movement === m.movement ? 0 : 1) + (1 - descSimilarity(e.description, m.description)) });
+    }));
+    pairs.sort((a, b) => a.score - b.score);
+    const matchOf = new Map(), usedExisting = new Set();
+    pairs.forEach(p => {
+      if (matchOf.has(p.mi) || usedExisting.has(p.e.id)) return;
+      matchOf.set(p.mi, p.e);
+      usedExisting.add(p.e.id);
+    });
+
+    const items = data.movements.map((m, mi) => ({ m: m, existing: matchOf.get(mi) || null, category: null, catSource: null, transfer: null }));
+    const flagged = registered.filter(e => !usedExisting.has(e.id)).map(e => ({ e: e, action: 'keep' }));
+    return { items: items, flagged: flagged };
+  }
+
+  // Giroconti: (1) già presenti in "Trasferimenti" -> la gamba importata non si
+  // duplica; (2) gamba importata con gamba opposta registrata su un altro conto
+  // -> si crea il trasferimento e si tolgono le due gambe. Il confronto è tra
+  // importo uguale, direzioni opposte, conti diversi, date entro ±3 giorni, e
+  // almeno una delle due gambe segnalata come "possibile giroconto".
+  function detectTransfers(items) {
+    const covered = [];
+    items.forEach(it => {
+      const m = it.m;
+      const t = transfers.find(t => Math.abs(t.amount - m.amount) < 0.005 && dayDiff(t.date, m.date) <= STATEMENT_MATCH_DAYS &&
+        (m.direction === 'addebito' ? t.from === m.account : t.to === m.account));
+      if (t) { it.transfer = { covered: t }; covered.push(it); }
+    });
+
+    const pairs = [];
+    items.forEach((it, ii) => {
+      if (it.transfer) return;
+      expenses.forEach(e => {
+        if (e.account === it.m.account || e.movement === 'carta_credito') return;
+        if ((e.direction || 'addebito') === it.m.direction) return;
+        if (Math.abs(e.amount - it.m.amount) > 0.005) return;
+        if (it.m.tag !== 'possibile_giroconto' && !e.transferHint) return;
+        const dd = dayDiff(e.date, it.m.date);
+        if (dd > STATEMENT_MATCH_DAYS) return;
+        pairs.push({ ii: ii, e: e, score: dd });
+      });
+    });
+    pairs.sort((a, b) => a.score - b.score);
+    const usedItems = new Set(), usedExisting = new Set();
+    pairs.forEach(p => {
+      if (usedItems.has(p.ii) || usedExisting.has(p.e.id)) return;
+      usedItems.add(p.ii);
+      usedExisting.add(p.e.id);
+      items[p.ii].transfer = { counterpart: p.e };
+    });
+    return covered;
+  }
+
+  // ---- categorie: automatiche -> regole imparate -> AI
+
+  function maskForAi(text) {
+    return String(text || '')
+      .replace(/\b[A-Z]{2}\d{2}[A-Z0-9 ]{12,34}\b/gi, '[IBAN]')
+      .replace(/(a favore di|beneficiario:|ben:|ordinante:|debitore:|deb:|payment from|transfer from)\s+(?:[A-Za-zÀ-ÿ'.]+\s*){1,3}/gi, '$1 [nome] ')
+      .replace(/\d{5,}/g, '#')
+      .replace(/\s+/g, ' ').trim().slice(0, 100);
+  }
+
+  function parseAiCategoryReply(text) {
+    const m = String(text || '').match(/\{[\s\S]*\}/);
+    if (!m) return {};
+    try { return JSON.parse(m[0]); } catch { return {}; }
+  }
+
+  async function suggestCategories(items, onProgress) {
+    const rules = loadCategoryRules();
+    const needAi = [];
+    items.forEach((it, i) => {
+      if (it.transfer) return;
+      const base = it.existing;
+      if (base && !STATEMENT_UNSET_CATEGORIES.includes(base.category)) {
+        it.category = base.category; it.catSource = 'esistente'; return;
+      }
+      const det = deterministicCategory(it.m);
+      if (det) { it.category = det; it.catSource = 'automatica'; return; }
+      const rule = rules[categoryRuleKey(it.m)];
+      if (rule && statementCategories(it.m.direction).includes(rule)) { it.category = rule; it.catSource = 'regola'; return; }
+      needAi.push(i);
+    });
+
+    let aiError = null;
+    for (let start = 0; start < needAi.length && !aiError; start += STATEMENT_AI_BATCH) {
+      const batch = needAi.slice(start, start + STATEMENT_AI_BATCH);
+      if (onProgress) onProgress(start, needAi.length);
+      const lines = batch.map(i => i + ' | ' + (items[i].m.direction === 'accredito' ? 'entrata' : 'uscita') + ' | ' +
+        items[i].m.amount.toFixed(2) + ' € | ' + maskForAi(items[i].m.description));
+      const prompt =
+        'Classifica movimenti bancari di un conto personale italiano. Per ogni movimento scegli UNA categoria, scritta esattamente come nell\'elenco.\n' +
+        'Categorie per le USCITE: ' + statementCategories('addebito').join('; ') + '\n' +
+        'Categorie per le ENTRATE: ' + statementCategories('accredito').join('; ') + '\n' +
+        'Se non sei sicuro usa "Altro" per le uscite e "Altro reddito" per le entrate.\n' +
+        'Rispondi SOLO con un oggetto JSON {"<numero>": "<categoria>", ...}, senza altro testo.\n\n' +
+        'Movimenti (numero | tipo | importo | descrizione):\n' + lines.join('\n');
+      try {
+        const reply = parseAiCategoryReply(await askAdvisor(prompt));
+        batch.forEach(i => {
+          const cat = reply[String(i)];
+          if (typeof cat === 'string' && statementCategories(items[i].m.direction).includes(cat)) {
+            items[i].category = cat; items[i].catSource = 'AI';
+          }
+        });
+      } catch (err) { aiError = err.message; }
+    }
+    // Quello che l'AI non ha classificato (errore o risposta incompleta) va a mano.
+    items.forEach(it => {
+      if (it.transfer || it.category) return;
+      it.category = it.m.direction === 'accredito' ? 'Altro reddito' : 'Altro';
+      it.catSource = 'da rivedere';
+    });
+    return aiError;
+  }
+
+  // ---- analisi del file
+
+  async function analyzeStatement() {
+    const account = document.getElementById('statement-account').value;
+    const kind = document.getElementById('statement-kind').value;
+    const file = document.getElementById('statement-file').files[0];
+    const out = document.getElementById('statementResult');
+    if (!file) { alert('Seleziona il file da importare.'); return; }
+
+    const btn = document.getElementById('statementAnalyzeBtn');
+    btn.disabled = true;
+    statementSession = { busy: true };
+    out.innerHTML = '<div class="expense-empty">Lettura del file in corso…</div>';
+    try {
+      const res = await fetch('/api/import-statement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: account, kind: kind, filename: file.name, since: STATEMENT_START_DATE, content_b64: await readFileAsBase64(file) }),
+      });
+      let data = null;
+      try { data = await res.json(); } catch { /* risposta non JSON: server vecchio */ }
+      if (res.status === 404) throw new Error('il server in esecuzione è di una versione precedente e non gestisce l\'importazione. Premi "⏻ Chiudi dashboard" e riavviala con avvia-dashboard.command.');
+      if (!res.ok || !data || data.status !== 'ok') throw new Error((data && data.message) || ('HTTP ' + res.status));
+
+      const rec = reconcileStatement(data);
+      const covered = detectTransfers(rec.items);
+      statementSession = { data: data, items: rec.items, flagged: rec.flagged, covered: covered, busy: true };
+      const aiError = await suggestCategories(rec.items, (done, total) => {
+        out.innerHTML = '<div class="expense-empty">Categorizzazione con l\'AI: ' + done + ' / ' + total + '…</div>';
+      });
+      statementSession.aiError = aiError;
+      statementSession.busy = false;
+      renderStatementReview();
+    } catch (err) {
+      statementSession = null;
+      out.innerHTML = '<div style="color:var(--red);font-size:13px;margin-top:12px;">Errore: ' + escapeHtml(err.message) + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ---- schermata di revisione
+
+  const STATEMENT_TAG_LABELS = {
+    stipendio: 'Stipendio', mutuo: 'Rata mutuo', possibile_giroconto: 'Possibile giroconto',
+    spese_bancarie: 'Spese bancarie', imposte: 'Imposte', investimento: 'Investimento',
+  };
+  const STATEMENT_SOURCE_LABELS = { AI: '🤖 AI', regola: '📌 regola', automatica: '⚙️ automatica', esistente: '✋ tua', manuale: '✋ tua', 'da rivedere': '❓ da rivedere' };
+
+  function categoryOptionsHtml(direction, selected) {
+    const groups = direction === 'accredito' ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
+    let html = Object.entries(groups).map(([group, cats]) =>
+      '<optgroup label="' + escapeHtml(group) + '">' +
+      cats.filter(c => c !== 'Varie').map(c => '<option value="' + escapeHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('') +
+      '</optgroup>').join('');
+    if (selected && !statementCategories(direction).includes(selected)) {
+      html = '<option value="' + escapeHtml(selected) + '" selected>' + escapeHtml(selected) + '</option>' + html;
+    }
+    return html;
+  }
+
+  function setStatementCategory(i, value) {
+    const it = statementSession.items[i];
+    it.category = value;
+    it.catSource = 'manuale';
+  }
+
+  function setStatementFlagAction(i, value) {
+    statementSession.flagged[i].action = value;
+    updateStatementConfirmLabel();
+  }
+
+  function signedAmountHtml(direction, amount) {
+    return '<span style="color:' + (direction === 'accredito' ? 'var(--green, #16a34a)' : 'inherit') + ';">' + (direction === 'accredito' ? '+' : '−') + fmt(amount) + '</span>';
+  }
+
+  function statementSection(title, count, bodyHtml, open) {
+    if (!count) return '';
+    return '<details' + (open ? ' open' : '') + ' style="margin-top:10px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">' +
+      title + ' (' + count + ')</summary><div style="max-height:300px;overflow-y:auto;margin-top:6px;">' + bodyHtml + '</div></details>';
+  }
+
+  function statementCounts() {
+    const ses = statementSession;
+    const withTransfer = ses.items.filter(it => it.transfer && it.transfer.counterpart);
+    return {
+      replaced: ses.items.filter(it => !it.transfer && it.existing),
+      added: ses.items.filter(it => !it.transfer && !it.existing),
+      transfers: withTransfer,
+      covered: ses.covered,
+      toDelete: ses.flagged.filter(f => f.action === 'delete'),
+    };
+  }
+
+  function updateStatementConfirmLabel() {
+    const btn = document.getElementById('statementCommitBtn');
+    if (!btn) return;
+    const c = statementCounts();
+    btn.textContent = 'Conferma importazione (' + (c.replaced.length + c.added.length + c.transfers.length) + ' movimenti' +
+      (c.toDelete.length ? ', ' + c.toDelete.length + ' da eliminare' : '') + ')';
+  }
+
+  function renderStatementReview() {
+    const ses = statementSession, s = ses.data.summary;
+    const c = statementCounts();
+    const skipped = Object.entries(s.skipped).map(([k, v]) => v + ' ' + k).join(', ');
+
+    let html = '<div class="modal-section-title" style="margin-top:14px;">Revisione — ' + escapeHtml(s.account) + (s.kind === 'carta' ? ' (carta di credito)' : '') + '</div>' +
+      '<div style="font-size:13px;line-height:1.7;">' +
+      'Il file fa fede dal <strong>' + s.window_from + '</strong> al <strong>' + s.window_to + '</strong> (importazione limitata dal ' + s.since + ').<br>' +
+      'Movimenti letti: <strong>' + s.imported + '</strong>' + (skipped ? ' (scartati: ' + escapeHtml(skipped) + ')' : '') +
+      ' · Entrate <strong>' + fmt(s.total_in) + '</strong> · Uscite <strong>' + fmt(s.total_out) + '</strong></div>';
+
+    html += '<div style="font-size:13px;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;">' +
+      '<span>🔁 Da sostituire: <strong>' + c.replaced.length + '</strong></span>' +
+      '<span>➕ Nuovi: <strong>' + c.added.length + '</strong></span>' +
+      '<span>↔️ Giroconti: <strong>' + c.transfers.length + '</strong></span>' +
+      '<span>⚠️ Da rivedere: <strong>' + ses.flagged.length + '</strong></span></div>';
+
+    if (s.checks.length) {
+      html += '<div style="font-size:12px;margin-top:8px;">' + s.checks.map(k =>
+        (k.ok ? '✅ ' : '⚠️ ') + escapeHtml(k.label) + ': atteso ' + k.atteso + ', letto ' + k.letto).join('<br>') + '</div>';
+    }
+    const notes = s.warnings.slice();
+    if (ses.aiError) notes.push('Categorizzazione AI non riuscita (' + ses.aiError + '): le voci non classificate sono "da rivedere" e vanno scelte a mano.');
+    if (s.ignored_exchanges.count) notes.push(s.ignored_exchanges.count + ' cambi valuta ignorati (non sono spese né entrate; effetto netto sul conto EUR ' + fmt(s.ignored_exchanges.net) + '): se sposti soldi tra tasche aggiorna il saldo a mano.');
+    if (s.ignored_card_settlements.count) notes.push(s.ignored_card_settlements.count + ' regolamenti della carta di credito (' + fmt(s.ignored_card_settlements.total) + ') non registrati come spese: gli acquisti vengono dal file carta.');
+    if (notes.length) {
+      html += '<div style="font-size:12px;margin-top:8px;color:var(--amber-text);">' + notes.map(w => '⚠️ ' + escapeHtml(w)).join('<br>') + '</div>';
+    }
+    html += '<div style="font-size:12px;margin-top:6px;color:var(--text-muted);">I saldi dei conti non vengono modificati.</div>';
+
+    const head = (cols) => '<table class="expense-table"><thead><tr>' + cols.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>';
+    const idx = it => ses.items.indexOf(it);
+    const catCell = it => '<select class="field-input" style="width:190px;text-align:left;" onchange="setStatementCategory(' + idx(it) + ', this.value)">' +
+      categoryOptionsHtml(it.m.direction, it.category) + '</select> <span style="font-size:10px;color:var(--text-muted);">' + (STATEMENT_SOURCE_LABELS[it.catSource] || '') + '</span>';
+
+    html += statementSection('➕ Nuovi movimenti', c.added.length,
+      head(['Data', 'Descrizione', 'Importo', 'Categoria']) + c.added.map(it =>
+        '<tr><td>' + it.m.date + '</td><td>' + escapeHtml(it.m.description.slice(0, 60)) + (it.m.provisional ? ' <em>(provvisorio)</em>' : '') + '</td>' +
+        '<td style="text-align:right;">' + signedAmountHtml(it.m.direction, it.m.amount) + '</td><td>' + catCell(it) + '</td></tr>').join('') + '</tbody></table>', true);
+
+    html += statementSection('🔁 Movimenti registrati che vengono sostituiti', c.replaced.length,
+      head(['Data file', 'Descrizione (file)', 'Importo', 'Registrato', 'Categoria']) + c.replaced.map(it =>
+        '<tr><td>' + it.m.date + '</td><td>' + escapeHtml(it.m.description.slice(0, 50)) + '</td>' +
+        '<td style="text-align:right;">' + signedAmountHtml(it.m.direction, it.m.amount) + '</td>' +
+        '<td style="font-size:11px;color:var(--text-muted);">' + it.existing.date + ' · ' + escapeHtml((it.existing.description || '').slice(0, 30)) + '</td>' +
+        '<td>' + catCell(it) + '</td></tr>').join('') + '</tbody></table>', false);
+
+    html += statementSection('↔️ Giroconti tra i tuoi conti (diventano un trasferimento)', c.transfers.length,
+      head(['Data', 'Importo', 'Gamba del file', 'Gamba registrata (verrà tolta)']) + c.transfers.map(it =>
+        '<tr><td>' + it.m.date + '</td><td style="text-align:right;">' + fmt(it.m.amount) + '</td>' +
+        '<td>' + escapeHtml(it.m.account) + ' ' + (it.m.direction === 'addebito' ? '→' : '←') + '</td>' +
+        '<td style="font-size:11px;">' + escapeHtml(it.transfer.counterpart.account) + ' · ' + it.transfer.counterpart.date + ' · ' + escapeHtml((it.transfer.counterpart.description || '').slice(0, 30)) + '</td></tr>').join('') + '</tbody></table>', true);
+
+    html += statementSection('✅ Già registrati come trasferimento (non importati)', c.covered.length,
+      head(['Data', 'Importo', 'Descrizione']) + c.covered.map(it =>
+        '<tr><td>' + it.m.date + '</td><td style="text-align:right;">' + fmt(it.m.amount) + '</td><td>' + escapeHtml(it.m.description.slice(0, 60)) + '</td></tr>').join('') + '</tbody></table>', false);
+
+    html += statementSection('⚠️ Registrati ma assenti dal file: da rivedere', ses.flagged.length,
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Nessuno viene eliminato se non lo scegli tu.</div>' +
+      head(['Data', 'Descrizione', 'Categoria', 'Importo', 'Azione']) + ses.flagged.map((f, i) =>
+        '<tr><td>' + f.e.date + '</td><td>' + escapeHtml((f.e.description || '').slice(0, 50)) + '</td><td>' + escapeHtml(f.e.category) + '</td>' +
+        '<td style="text-align:right;">' + signedAmountHtml(f.e.direction || 'addebito', f.e.amount) + '</td>' +
+        '<td><select class="field-input" style="width:100px;text-align:left;" onchange="setStatementFlagAction(' + i + ', this.value)">' +
+        '<option value="keep">Mantieni</option><option value="delete">Elimina</option></select></td></tr>').join('') + '</tbody></table>', true);
+
+    html += '<div style="margin-top:16px;text-align:right;"><button class="btn-save" id="statementCommitBtn" onclick="commitStatementImport()"></button></div>';
+    document.getElementById('statementResult').innerHTML = html;
+    updateStatementConfirmLabel();
+  }
+
+  // ---- conferma: scrittura in dati.json
+
+  function commitStatementImport() {
+    const ses = statementSession;
+    if (!ses || ses.busy) return;
+    const c = statementCounts();
+    const total = c.replaced.length + c.added.length + c.transfers.length;
+    if (!total && !c.toDelete.length) { alert('Non c\'è nulla da importare.'); return; }
+    const s = ses.data.summary;
+    if (!confirm('Importare l\'estratto ' + s.account + ' (' + s.window_from + ' → ' + s.window_to + ')?\n\n' +
+        '- ' + c.added.length + ' movimenti nuovi\n' +
+        '- ' + c.replaced.length + ' movimenti registrati sostituiti\n' +
+        '- ' + c.transfers.length + ' giroconti (diventano trasferimenti)\n' +
+        '- ' + c.toDelete.length + ' movimenti registrati eliminati\n\n' +
+        'I saldi dei conti NON vengono modificati. Continuare?')) return;
+
+    const now = todayIsoLocal();
+    const importId = String(Date.now());
+    const removeIds = new Set(), replacements = new Map(), toAdd = [], newTransfers = [];
+    const rules = loadCategoryRules();
+    let seq = 0;
+    const newId = () => Date.now() + '-' + (seq++) + '-' + Math.random().toString(36).slice(2, 6);
+
+    ses.items.forEach(it => {
+      const m = it.m;
+      if (it.transfer && it.transfer.covered) return; // già registrato come trasferimento
+      if (it.transfer && it.transfer.counterpart) {
+        const other = it.transfer.counterpart;
+        const debit = m.direction === 'addebito' ? { account: m.account, date: m.date } : { account: other.account, date: other.date };
+        newTransfers.push({
+          id: newId(), date: debit.date, from: debit.account, to: m.direction === 'addebito' ? other.account : m.account,
+          amount: m.amount, description: 'Giroconto (da estratto conto)', imported: true, noBalance: true,
+        });
+        removeIds.add(other.id);
+        if (it.existing) removeIds.add(it.existing.id);
+        return;
+      }
+      const base = it.existing;
+      const entry = {
+        id: base ? base.id : newId(),
+        date: m.date,
+        direction: m.direction,
+        account: m.account,
+        movement: (m.direction === 'accredito' && m.movement === 'carta_credito') ? 'accredito_diretto' : m.movement,
+        category: it.category,
+        description: m.description,
+        amount: m.amount,
+        imported: true,
+        noBalance: true,
+        source: { bank: m.account, kind: m.source_kind, importId: importId, importedOn: now },
+      };
+      if (m.provisional) entry.provisional = true;
+      if (base && base.autoMortgage) entry.autoMortgage = true; // altrimenti la rata verrebbe rigenerata
+      if (base && base.necessity && it.catSource === 'esistente' && it.category === base.category) entry.necessity = base.necessity;
+      if (entry.direction === 'addebito' && entry.movement === 'carta_credito') { entry.ccApplied = true; entry.ccAppliedOn = now; }
+      if (m.tag === 'possibile_giroconto') entry.transferHint = true;
+      // Si impara solo da categorie scelte da te (o già tue): un suggerimento AI mai
+      // controllato non deve diventare una regola permanente.
+      if (it.catSource === 'manuale' || it.catSource === 'esistente') rules[categoryRuleKey(m)] = it.category;
+      if (base) replacements.set(base.id, entry); else toAdd.push(entry);
+    });
+    ses.flagged.forEach(f => { if (f.action === 'delete') removeIds.add(f.e.id); });
+
+    expenses = expenses.filter(e => !removeIds.has(e.id)).map(e => replacements.get(e.id) || e).concat(toAdd);
+    expenses.sort((a, b) => b.date.localeCompare(a.date));
+    saveExpenses(expenses);
+    if (newTransfers.length) {
+      transfers = transfers.concat(newTransfers);
+      transfers.sort((a, b) => b.date.localeCompare(a.date));
+      saveTransfers(transfers);
+    }
+    store.setItem(CATEGORY_RULES_KEY, JSON.stringify(rules));
+    touchLastModified();
+
+    statementSession = null;
+    closeStatementModal();
+    render(loadData());
+    renderExpenses();
+    renderAnnualAnalysis();
+    renderTransfers();
+    alert('Importazione completata: ' + toAdd.length + ' nuovi, ' + replacements.size + ' sostituiti, ' +
+      newTransfers.length + ' giroconti, ' + c.toDelete.length + ' eliminati.');
   }
 
   function updateSyncIndicator() {
@@ -2467,7 +3003,7 @@
   // Categorie per gli accrediti (denaro in entrata) — distinte da quelle di spesa,
   // che non hanno senso per un movimento in entrata (es. "Mutuo" o "Cibo").
   const CATEGORY_GROUPS_ENTRATE = {
-    'Entrate': ['Rimborso', 'Bonus/Premio', 'Regalo ricevuto', 'Vendita', 'Interessi/Rendimenti', 'Altro reddito'],
+    'Entrate': ['Stipendio', 'Rimborso', 'Bonus/Premio', 'Regalo ricevuto', 'Vendita', 'Interessi/Rendimenti', 'Altro reddito'],
   };
 
   const MOVEMENT_LABELS = {
@@ -2782,7 +3318,8 @@
 
   function deleteExpense(id) {
     const entry = expenses.find(e => e.id === id);
-    if (entry) {
+    // Le voci importate da estratto conto (noBalance) non hanno mai toccato i saldi.
+    if (entry && !entry.noBalance) {
       const direction = entry.direction || 'addebito';
       if (direction === 'accredito') {
         // Era stato aggiunto subito al saldo: va sottratto per stornarlo.
@@ -3173,7 +3710,7 @@
 
   function deleteTransfer(id) {
     const entry = transfers.find(t => t.id === id);
-    if (entry) {
+    if (entry && !entry.noBalance) {
       // Storna entrambe le gambe del movimento.
       adjustAccountBalance(entry.to, -entry.amount);
       adjustAccountBalance(entry.from, entry.amount);
