@@ -403,6 +403,7 @@
       background: var(--surface); cursor: pointer; color: var(--text-secondary); font-family: inherit;
     }
     .annual-year-chip.active { background: var(--blue); color: white; border-color: var(--blue); }
+    .annual-chart-title { font-size: 11px; font-weight: 700; color: var(--text-secondary); margin: 6px 0; }
     .annual-table-wrap { margin-top: 14px; }
     .annual-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .annual-table th {
@@ -946,13 +947,19 @@
 
 <!-- Analisi annuale movimenti -->
 <div class="card annual-card">
-  <div class="section-title">📊 Analisi annuale — flusso netto (confronto tra anni)</div>
+  <div class="section-title">📊 Analisi annuale — flusso netto mese per mese</div>
   <div class="annual-year-select" id="annualYearSelect"></div>
+  <div class="annual-chart-title">Variazione del netto rispetto allo stesso mese dell'anno prima</div>
+  <div class="chart-container" style="height:200px;">
+    <canvas id="annualDiffChart"></canvas>
+  </div>
+  <div class="annual-chart-title">Entrate e uscite del mese (anno scelto)</div>
   <div class="chart-container" style="height:220px;">
     <canvas id="annualChart"></canvas>
   </div>
+  <div class="expense-cc-note" id="annualMissingNote"></div>
   <div class="annual-table-wrap" id="annualTableWrap"></div>
-  <div class="expense-cc-note">Mostra il flusso netto mensile (entrate − uscite) sulla base dei movimenti che hai registrato manualmente nel registro movimenti (gennaio–dicembre per ogni anno). Anni o mesi senza dati inseriti risultano a zero, non necessariamente a flusso reale nullo.</div>
+  <div class="expense-cc-note">Basata sui movimenti del registro (accrediti = entrate, addebiti = uscite, trasferimenti tra conti esclusi). Nel primo grafico le barre sono verdi se il netto del mese è migliorato rispetto allo stesso mese dell'anno prima, rosse se è peggiorato; l'asterisco indica che l'anno prima non ha movimenti, la × che il mese non ne ha.</div>
 </div>
 
 <!-- Trasferimenti tra conti -->
@@ -3552,10 +3559,10 @@
   // anni, così Skender può vedere trend e differenze anno su anno. Basata solo sul
   // registro movimenti.
 
-  const ANNUAL_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626', '#0f766e'];
   const MONTH_LABELS_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
-  let annualChartInstance = null;
-  let selectedYears = new Set();
+  let annualChartInstance = null;      // entrate vs uscite dell'anno scelto
+  let annualDiffChartInstance = null;  // variazione del netto rispetto all'anno prima
+  let selectedAnnualYear = null;
 
   function getAvailableYears() {
     const years = new Set();
@@ -3564,83 +3571,185 @@
     return Array.from(years).sort();
   }
 
-  function toggleAnnualYear(y) {
-    if (selectedYears.has(y)) {
-      if (selectedYears.size > 1) selectedYears.delete(y);
-    } else {
-      selectedYears.add(y);
-    }
+  function selectAnnualYear(y) {
+    selectedAnnualYear = y;
     renderAnnualAnalysis();
   }
 
-  function computeMonthlyTotalsForYear(year) {
-    const totals = new Array(12).fill(0);
+  // Entrate (accrediti), uscite (addebiti) e netto per ogni mese dell'anno.
+  // `has` distingue un mese senza movimenti da un netto davvero pari a zero.
+  function computeMonthlyFlowsForYear(year) {
+    const inc = new Array(12).fill(0);
+    const out = new Array(12).fill(0);
+    const has = new Array(12).fill(false);
     expenses.forEach(e => {
       if (e.date && e.date.slice(0, 4) === year) {
         const monthIdx = parseInt(e.date.slice(5, 7), 10) - 1;
         if (monthIdx >= 0 && monthIdx < 12) {
-          const direction = e.direction || 'addebito';
-          totals[monthIdx] += direction === 'accredito' ? e.amount : -e.amount;
+          has[monthIdx] = true;
+          if ((e.direction || 'addebito') === 'accredito') inc[monthIdx] += e.amount;
+          else out[monthIdx] += e.amount;
         }
       }
     });
-    return totals;
+    return { inc: inc, out: out, net: inc.map((v, i) => v - out[i]), has: has };
   }
+
+  // Segni sulla linea dello zero: marks[i] = 'x' (mese senza dati) oppure
+  // '*' (mese con dati ma anno precedente senza dati: confronto impossibile).
+  const annualMarksPlugin = {
+    id: 'annualMarks',
+    afterDatasetsDraw(chart) {
+      const marks = chart.config.data.marks;
+      if (!marks) return;
+      const ctx = chart.ctx;
+      const zeroY = chart.scales.y.getPixelForValue(0);
+      const cs = getComputedStyle(document.documentElement);
+      const muted = cs.getPropertyValue('--text-muted').trim() || '#888';
+      const strong = cs.getPropertyValue('--text-primary').trim() || '#222';
+      ctx.save();
+      marks.forEach((m, i) => {
+        if (!m) return;
+        const x = chart.scales.x.getPixelForValue(i);
+        if (m === 'x') {
+          const r = 3;
+          ctx.strokeStyle = muted; ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x - r, zeroY - r); ctx.lineTo(x + r, zeroY + r);
+          ctx.moveTo(x - r, zeroY + r); ctx.lineTo(x + r, zeroY - r);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = strong; ctx.font = 'bold 16px sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('*', x, zeroY + 4);
+        }
+      });
+      ctx.restore();
+    },
+  };
 
   function renderAnnualAnalysis() {
     const years = getAvailableYears();
-    if (selectedYears.size === 0) {
-      years.slice(-3).forEach(y => selectedYears.add(y));
+    if (!selectedAnnualYear || !years.includes(selectedAnnualYear)) {
+      selectedAnnualYear = String(new Date().getFullYear());
     }
+    const year = selectedAnnualYear;
+    const prevYear = String(parseInt(year, 10) - 1);
     document.getElementById('annualYearSelect').innerHTML = years.map(y =>
-      '<button type="button" class="annual-year-chip' + (selectedYears.has(y) ? ' active' : '') + '" onclick="toggleAnnualYear(\'' + y + '\')">' + y + '</button>'
+      '<button type="button" class="annual-year-chip' + (y === year ? ' active' : '') + '" onclick="selectAnnualYear(\'' + y + '\')">' + y + '</button>'
     ).join('');
 
-    const activeYears = years.filter(y => selectedYears.has(y));
+    const cur = computeMonthlyFlowsForYear(year);
+    const prev = computeMonthlyFlowsForYear(prevYear);
+    // Variazione del netto rispetto allo stesso mese dell'anno prima: solo se
+    // entrambi i mesi hanno movimenti, altrimenti nessuna barra (null).
+    const delta = cur.net.map((v, i) => (cur.has[i] && prev.has[i] ? v - prev.net[i] : null));
+    const diffMarks = cur.has.map((h, i) => (!h ? 'x' : (!prev.has[i] ? '*' : '')));
+    const flowMarks = cur.has.map(h => (h ? '' : 'x'));
 
+    const cs = getComputedStyle(document.documentElement);
+    const green = cs.getPropertyValue('--green').trim() || '#059669';
+    const red = cs.getPropertyValue('--red').trim() || '#dc2626';
+    const yTicks = { callback: v => fmt(v) };
+
+    // 1) Variazione vs anno precedente
+    if (annualDiffChartInstance) { annualDiffChartInstance.destroy(); annualDiffChartInstance = null; }
+    annualDiffChartInstance = new Chart(document.getElementById('annualDiffChart'), {
+      type: 'bar',
+      plugins: [annualMarksPlugin],
+      data: {
+        labels: MONTH_LABELS_IT,
+        marks: diffMarks,
+        datasets: [{
+          label: 'Variazione del netto',
+          data: delta,
+          backgroundColor: delta.map(v => (v !== null && v < 0 ? red : green)),
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            onClick: () => {},
+            labels: {
+              boxWidth: 12, font: { size: 11 },
+              generateLabels: () => [
+                { text: 'Migliorato rispetto al ' + prevYear, fillStyle: green, strokeStyle: green },
+                { text: 'Peggiorato rispetto al ' + prevYear, fillStyle: red, strokeStyle: red },
+                { text: '* dati ' + prevYear + ' mancanti', fillStyle: 'transparent', strokeStyle: 'transparent' },
+                { text: '× nessun dato nel ' + year, fillStyle: 'transparent', strokeStyle: 'transparent' },
+              ],
+            },
+          },
+          tooltip: { callbacks: { label: ctx => {
+            const i = ctx.dataIndex;
+            if (!cur.has[i]) return ' Nessun dato nel ' + year;
+            if (!prev.has[i]) return ' * Dati ' + prevYear + ' mancanti: confronto non disponibile';
+            return [' Variazione: ' + fmt(ctx.raw),
+                    ' ' + year + ': ' + fmt(cur.net[i]) + ' · ' + prevYear + ': ' + fmt(prev.net[i])];
+          } } },
+        },
+        scales: { y: { ticks: yTicks } },
+      },
+    });
+
+    // 2) Entrate vs uscite dell'anno scelto
     if (annualChartInstance) { annualChartInstance.destroy(); annualChartInstance = null; }
     annualChartInstance = new Chart(document.getElementById('annualChart'), {
       type: 'bar',
+      plugins: [annualMarksPlugin],
       data: {
         labels: MONTH_LABELS_IT,
-        datasets: activeYears.map((y, i) => ({
-          label: y,
-          data: computeMonthlyTotalsForYear(y),
-          backgroundColor: ANNUAL_COLORS[i % ANNUAL_COLORS.length],
-        })),
+        marks: flowMarks,
+        datasets: [
+          { label: 'Entrate ' + year, data: cur.inc, backgroundColor: green },
+          { label: 'Uscite ' + year, data: cur.out, backgroundColor: red },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
           legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmt(ctx.raw) } },
+          tooltip: { callbacks: {
+            label: ctx => ' ' + ctx.dataset.label + ': ' + (cur.has[ctx.dataIndex] ? fmt(ctx.raw) : 'nessun dato'),
+            afterBody: items => (cur.has[items[0].dataIndex] ? ['Netto: ' + fmt(cur.net[items[0].dataIndex])] : []),
+          } },
         },
-        scales: {
-          y: { ticks: { callback: v => fmt(v) } },
-        },
+        scales: { y: { beginAtZero: true, ticks: yTicks } },
       },
     });
 
-    const rows = activeYears.map(y => {
-      const totals = computeMonthlyTotalsForYear(y);
-      const total = totals.reduce((s, v) => s + v, 0);
-      const monthsWithData = totals.filter(v => v !== 0).length;
-      return { year: y, total: total, avg: monthsWithData > 0 ? total / monthsWithData : 0 };
-    });
+    // Nota sui mesi senza dati (per l'anno in corso solo fino al mese attuale)
+    const last = year === String(new Date().getFullYear()) ? new Date().getMonth() : 11;
+    const noData = MONTH_LABELS_IT.filter((m, i) => i <= last && !cur.has[i]);
+    const noPrev = MONTH_LABELS_IT.filter((m, i) => cur.has[i] && !prev.has[i]);
+    const notes = [];
+    if (noData.length) notes.push('× Nessun movimento nel ' + year + ': ' + (noData.length === last + 1 ? 'tutti i mesi' : noData.join(', ')));
+    if (noPrev.length) notes.push('* Confronto non disponibile (nessun movimento nel ' + prevYear + '): ' + noPrev.join(', '));
+    document.getElementById('annualMissingNote').innerHTML = notes.length
+      ? notes.join('<br>') : 'Tutti i mesi hanno movimenti sia nel ' + year + ' sia nel ' + prevYear + '.';
 
-    let tableHtml = '<table class="annual-table"><thead><tr><th>Anno</th><th style="text-align:right;">Netto</th><th style="text-align:right;">Media netta/mese attivo</th><th style="text-align:right;">Var. vs anno prec. (in questa selezione)</th></tr></thead><tbody>';
-    rows.forEach((r, idx) => {
-      const prev = idx > 0 ? rows[idx - 1] : null;
-      let deltaHtml = '—';
-      if (prev && prev.total > 0) {
-        const deltaPct = ((r.total - prev.total) / prev.total) * 100;
-        const cls = deltaPct > 0 ? 'pos' : (deltaPct < 0 ? 'neg' : '');
-        deltaHtml = '<span class="annual-delta ' + cls + '">' + (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%</span>';
+    // Tabella mensile dell'anno scelto
+    const dcell = v => {
+      if (v === null) return '—';
+      const cls = v > 0 ? 'pos' : (v < 0 ? 'neg' : '');
+      return '<span class="annual-delta ' + cls + '">' + (v > 0 ? '+' : '') + fmt(v) + '</span>';
+    };
+    let tableHtml = '<table class="annual-table"><thead><tr><th>Mese ' + year + '</th><th style="text-align:right;">Entrate</th><th style="text-align:right;">Uscite</th><th style="text-align:right;">Netto</th><th style="text-align:right;">Var. vs ' + prevYear + '</th></tr></thead><tbody>';
+    MONTH_LABELS_IT.forEach((m, i) => {
+      if (!cur.has[i]) {
+        tableHtml += '<tr><td>' + m + '</td><td class="num" colspan="4" style="text-align:center;color:var(--text-muted);font-weight:400;">× nessun dato</td></tr>';
+        return;
       }
-      tableHtml += '<tr><td>' + r.year + '</td><td class="num">' + fmt(r.total) + '</td><td class="num">' + fmt(r.avg) + '</td><td class="num">' + deltaHtml + '</td></tr>';
+      tableHtml += '<tr><td>' + m + '</td><td class="num">' + fmt(cur.inc[i]) + '</td><td class="num">' + fmt(cur.out[i]) +
+        '</td><td class="num">' + fmt(cur.net[i]) + '</td><td class="num">' + (prev.has[i] ? dcell(delta[i]) : '*') + '</td></tr>';
     });
-    tableHtml += '</tbody></table>';
+    const sum = arr => arr.reduce((t, v) => t + v, 0);
+    tableHtml += '<tr><td><b>Totale</b></td><td class="num">' + fmt(sum(cur.inc)) + '</td><td class="num">' + fmt(sum(cur.out)) +
+      '</td><td class="num">' + fmt(sum(cur.net)) + '</td><td></td></tr></tbody></table>';
     document.getElementById('annualTableWrap').innerHTML = tableHtml;
   }
 
