@@ -20,6 +20,17 @@ Dashboard di finanza personale multi-utente, con consulente AI integrato. Ogni u
 - `cryptography`, per cifrare chiavi API e segreti 2FA (obbligatorio online)
 - `xlrd` e `openpyxl`, solo se vuoi importare gli estratti conto BPER (.xls) e Fineco (.xlsx)
 
+## Avvio rapido
+
+```bash
+./run.sh                       # crea .venv, installa le dipendenze, crea .env e avvia il server
+./run.sh invite                # codice d'invito per registrare un utente
+./run.sh import-legacy EMAIL   # porta dati.json e ai-config.json in un account
+./run.sh reset-password EMAIL
+```
+
+Le impostazioni (chiave maestra, SMTP, URL pubblico…) stanno in `.env`, creato alla prima esecuzione e ignorato da git. Quello che segue è la procedura manuale equivalente.
+
 ## Avvio
 
 ```bash

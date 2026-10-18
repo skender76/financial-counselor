@@ -1,0 +1,9 @@
+# Dipendenze della dashboard (installate da run.sh nell'ambiente virtuale .venv).
+# Il resto è libreria standard di Python 3.
+cryptography    # cifratura di chiavi API e segreti 2FA
+xlrd            # estratti conto BPER (.xls)
+openpyxl        # estratti conto Fineco (.xlsx)
+# SDK del consulente AI: decommenta quello del fornitore che usi
+# anthropic
+# openai        # anche Mistral, DeepSeek, xAI, OpenRouter
+# google-genai

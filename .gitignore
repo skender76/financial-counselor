@@ -15,3 +15,6 @@ __pycache__/
 
 # Estratti conto reali (IBAN, nomi, movimenti): mai nel repository
 esempi-estratti/
+
+# Impostazioni locali con la chiave maestra
+.env
