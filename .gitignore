@@ -4,6 +4,11 @@ dati.json.tmp
 ai-config.json
 ai-config.json.tmp
 
+# Database multi-utente (account, sessioni, dati e chiavi API di tutti gli utenti)
+app.db
+app.db-wal
+app.db-shm
+
 __pycache__/
 .venv/
 .DS_Store
