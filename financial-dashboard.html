@@ -334,6 +334,55 @@
       font-size: 14px; line-height: 1; padding: 2px 6px;
     }
     .btn-del-expense:hover { color: var(--red); }
+    /* Modal movimenti in lotto */
+    .modal.modal-batch { width: 1040px; }
+    .batch-wrap { overflow-x: auto; }
+    .batch-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .batch-table th { text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 600; padding: 0 4px 6px; white-space: nowrap; }
+    .batch-table td { padding: 3px 4px; vertical-align: top; }
+    .batch-input {
+      width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; font-family: inherit; background: var(--surface); color: var(--text-primary);
+    }
+    .batch-input:focus { outline: none; border-color: var(--blue); }
+    .batch-row.has-err .batch-input { border-color: var(--red); }
+    .batch-row.has-warn:not(.has-err) .batch-input { border-color: var(--amber); }
+    .batch-row .b-nec { margin-top: 3px; }
+    .batch-toolbar { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+    .batch-summary { font-size: 12px; color: var(--text-secondary); }
+    .batch-msgs { margin-top: 10px; font-size: 12px; }
+    .batch-msg { margin-bottom: 3px; }
+    .batch-msg.err { color: var(--red); }
+    .batch-msg.warn { color: var(--amber-text); background: var(--amber-bg); padding: 2px 8px; border-radius: 6px; }
+    .btn-edit-expense {
+      background: none; border: none; color: var(--text-muted); cursor: pointer;
+      font-size: 13px; line-height: 1; padding: 2px 6px;
+    }
+    .btn-edit-expense:hover { color: var(--blue); }
+    .expense-bulk-bar {
+      display: none; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px;
+      padding: 8px 10px; margin-bottom: 8px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+    }
+    .expense-bulk-bar.open { display: flex; }
+    .expense-bulk-bar select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text-primary); }
+    .batch-input.b-suggested { border-style: dashed; border-color: var(--blue); }
+    .batch-paste { display: none; margin-top: 10px; }
+    .batch-paste.open { display: block; }
+    .batch-paste textarea {
+      width: 100%; min-height: 90px; padding: 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; font-family: monospace; background: var(--surface); color: var(--text-primary); resize: vertical;
+    }
+    .batch-paste-hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 6px; }
+    .undo-toast {
+      display: none; position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 200;
+      align-items: center; gap: 14px; padding: 10px 16px; border-radius: 10px; font-size: 13px;
+      background: var(--text-primary); color: var(--surface); box-shadow: var(--modal-shadow);
+    }
+    .undo-toast.open { display: flex; }
+    .undo-toast button {
+      background: none; border: none; color: inherit; font-weight: 700; text-decoration: underline;
+      cursor: pointer; font-size: 13px; font-family: inherit;
+    }
     .investment-row-actions { display: flex; align-items: center; gap: 2px; }
     .btn-icon-sm {
       background: none; border: none; color: var(--text-muted); cursor: pointer;
@@ -876,6 +925,7 @@
     <button class="btn-filter-reset" onclick="resetExpenseFilters()" title="Rimuovi tutti i filtri">✕ Reset filtri</button>
   </div>
   <div class="expense-filter-summary" id="expenseFilterSummary"></div>
+  <div class="expense-bulk-bar" id="expenseBulkBar"></div>
   <div class="expense-table-wrap">
     <table class="expense-table">
       <thead>
@@ -889,61 +939,48 @@
   <div class="expense-cc-note">Addebiti in contanti, ritiro contanti, carta di debito e bonifico vengono scalati subito dal saldo del conto selezionato; gli accrediti vengono aggiunti subito. I soli addebiti con carta di credito NON sono scalati subito: restano "in attesa" e vengono addebitati automaticamente il mese successivo (al primo caricamento del dashboard in quel mese). Puoi comunque correggere i saldi manualmente da "✏️ Aggiorna dati" per riconciliarli con l'estratto conto reale — l'ultimo valore che inserisci lì sovrascrive sempre tutto.</div>
 </div>
 
-<!-- Add Movement Modal -->
+<!-- Add/Edit Movement Modal -->
 <div class="modal-overlay" id="expenseModalOverlay">
-  <div class="modal">
-    <h2>💸 Aggiungi movimentazione</h2>
+  <div class="modal modal-batch">
+    <h2 id="expenseModalTitle">💸 Aggiungi movimentazioni</h2>
     <div class="modal-section">
       <div class="field-row">
-        <label class="field-label">Direzione</label>
-        <select class="field-input" id="expense-direction" style="width:160px;" onchange="onExpenseDirectionChange()">
-          <option value="addebito">Addebito (uscita)</option>
-          <option value="accredito">Accredito (entrata)</option>
-        </select>
-      </div>
-      <div class="field-row">
-        <label class="field-label">Data</label>
-        <input type="date" class="field-input" id="expense-date" style="width:160px;">
-      </div>
-      <div class="field-row">
-        <label class="field-label">Conto di riferimento</label>
-        <select class="field-input" id="expense-account" style="width:160px;">
+        <label class="field-label">Conto di riferimento (valido per tutte le righe)</label>
+        <select class="field-input" id="expense-account" style="width:160px;" onchange="refreshBatch()">
           <option value="Fineco">Fineco</option>
           <option value="BPER">BPER</option>
           <option value="Revolut">Revolut</option>
         </select>
       </div>
-      <div class="field-row">
-        <label class="field-label">Tipo movimento</label>
-        <select class="field-input" id="expense-movement" style="width:160px;"></select>
-      </div>
-      <div class="field-row">
-        <label class="field-label">Categoria</label>
-        <select class="field-input" id="expense-category" style="width:160px;" onchange="onExpenseCategoryChange()"></select>
-      </div>
-      <div class="field-row" id="expense-necessity-row" style="display:none;">
-        <label class="field-label">Necessità</label>
-        <select class="field-input" id="expense-necessity" style="width:160px;">
-          <option value="">Seleziona…</option>
-          <option value="necessaria">Necessaria (utenze, igiene, ecc.)</option>
-          <option value="discrezionale">Discrezionale</option>
-        </select>
-      </div>
-      <div class="field-row">
-        <label class="field-label">Descrizione</label>
-        <input type="text" class="field-input" id="expense-description" style="width:160px;" placeholder="es. Spesa Esselunga">
-      </div>
-      <div class="field-row">
-        <label class="field-label">Importo (€)</label>
-        <input type="number" class="field-input" id="expense-amount" step="0.01" min="0">
-      </div>
     </div>
+    <div class="batch-wrap">
+      <table class="batch-table">
+        <thead><tr>
+          <th style="width:122px;">Data</th><th style="width:100px;">Direzione</th><th style="width:170px;">Tipo movimento</th>
+          <th style="width:190px;">Categoria</th><th>Descrizione</th><th style="width:100px;">Importo (€)</th><th style="width:28px;"></th>
+        </tr></thead>
+        <tbody id="batchBody"></tbody>
+      </table>
+    </div>
+    <div class="batch-toolbar">
+      <button class="btn-cancel" id="batchAddRowBtn" onclick="addBatchRow(null, true)">+ Aggiungi riga</button>
+      <button class="btn-cancel" id="batchPasteBtn" onclick="toggleBatchPaste()">📋 Incolla righe</button>
+      <span class="batch-summary" id="batchSummary"></span>
+    </div>
+    <div class="batch-paste" id="batchPasteBox">
+      <div class="batch-paste-hint">Una riga per movimento: <code>data; descrizione; importo</code> (anche copiate da un foglio di calcolo). Date come 15/10/2026 o 2026-10-15. Importo con segno: <code>-12,50</code> uscita, <code>+1000</code> entrata, senza segno uscita. Le righe aggiunte restano da rivedere prima di salvare.</div>
+      <textarea id="batchPasteText" placeholder="15/10/2026; Spesa Esselunga; -45,30&#10;16/10/2026; Stipendio; +1800,00"></textarea>
+      <div style="margin-top:6px;"><button class="btn-cancel" onclick="applyBatchPaste()">Aggiungi come righe</button></div>
+    </div>
+    <div class="batch-msgs" id="batchMsgs"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeExpenseModal()">Annulla</button>
-      <button class="btn-save" onclick="addExpense()">Aggiungi</button>
+      <button class="btn-save" id="batchSaveBtn" onclick="saveExpenseBatch()">Salva</button>
     </div>
   </div>
 </div>
+
+<div class="undo-toast" id="undoToast"><span id="undoToastText"></span><button onclick="undoLast()">Annulla</button></div>
 
 <!-- Analisi annuale movimenti -->
 <div class="card annual-card">
@@ -3212,112 +3249,682 @@
 
   let expenses = loadExpenses();
 
-  function populateCategorySelect(direction) {
+  // ===== Inserimento e modifica movimenti (modal a righe) =====
+  // Un solo conto per tutto il lotto, una riga per movimento (data, direzione,
+  // tipo, categoria, descrizione, importo). Il salvataggio è unico: i saldi si
+  // aggiornano con un solo aggiustamento per conto e `expenses` si scrive una
+  // volta sola, invece di due salvataggi per ogni movimento.
+  const ENTRY_DEFAULTS_KEY = 'skender_fin_entry_defaults_v1';
+  const BATCH_OLD_DAYS = 60;      // oltre questa distanza dalla data di oggi, avviso
+  const BATCH_DUP_DAYS = 3;       // finestra del controllo duplicati (come l'import estratti)
+  let expenseEditId = null;       // id del movimento in modifica; null = inserimento in lotto
+  let batchTried = false;         // dopo il primo "Salva" gli errori restano visibili in tempo reale
+  let batchWarnAck = false;       // gli avvisi vanno confermati con un secondo "Salva"
+
+  // Ultimi valori usati (conto, direzione, tipo per direzione): evitano di
+  // reimpostarli a ogni apertura. Stanno in dati.json come tutto il resto.
+  function loadEntryDefaults() {
+    try {
+      const s = store.getItem(ENTRY_DEFAULTS_KEY);
+      return s ? JSON.parse(s) : {};
+    } catch { return {}; }
+  }
+
+  function saveEntryDefaults(o) {
+    store.setItem(ENTRY_DEFAULTS_KEY, JSON.stringify(o));
+  }
+
+  // Importo scritto dall'utente: accetta la virgola ("12,50", "1.234,56").
+  // Restituisce null se vuoto, NaN se non valido o ambiguo ("1.234" senza
+  // virgola potrebbe voler dire 1,234 o 1234: meglio chiedere di riscriverlo).
+  function parseAmountInput(raw) {
+    let s = String(raw == null ? '' : raw).replace(/[\s€]/g, '');
+    if (!s) return null;
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(s)) return NaN;
+    if (!/^\d+(\.\d{1,2})?$/.test(s)) return NaN;
+    const n = parseFloat(s);
+    return n > 0 ? n : NaN;
+  }
+
+  function dayNumber(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Math.round(Date.UTC(y, m - 1, d) / 86400000);
+  }
+
+  function isValidIsoDate(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const [y, m, d] = s.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d));
+    return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+  }
+
+  // Effetto di un movimento sul saldo del suo conto. Stessa regola di
+  // deleteExpense: le voci importate (noBalance) non toccano i saldi e gli
+  // addebiti a carta di credito non ancora addebitati non sono ancora stati scalati.
+  function balanceEffect(e) {
+    if (e.noBalance) return 0;
+    if ((e.direction || 'addebito') === 'accredito') return e.amount;
+    if (e.movement === 'carta_credito' && !e.ccApplied) return 0;
+    return -e.amount;
+  }
+
+  function movementOptionsHtml(direction, selected) {
+    const opts = direction === 'accredito' ? MOVEMENT_OPTIONS_ACCREDITO : MOVEMENT_OPTIONS_ADDEBITO;
+    let html = opts.map(([v, l]) => '<option value="' + v + '"' + (v === selected ? ' selected' : '') + '>' + l + '</option>').join('');
+    // Una voce esistente può avere un tipo non più previsto per la direzione.
+    if (selected && !opts.some(o => o[0] === selected)) {
+      html += '<option value="' + escapeHtml(selected) + '" selected>' + escapeHtml(MOVEMENT_LABELS[selected] || selected) + '</option>';
+    }
+    return html;
+  }
+
+  // La categoria parte da "Seleziona…" (non più dalla prima della lista, "Mutuo"):
+  // dimenticarla diventa un errore visibile invece di una categoria sbagliata.
+  function categoryOptionsHtml(direction, selected) {
     const groups = direction === 'accredito' ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
-    const sel = document.getElementById('expense-category');
-    sel.innerHTML = Object.entries(groups).map(([group, cats]) =>
+    let known = false;
+    let html = '<option value="">Seleziona…</option>' + Object.entries(groups).map(([group, cats]) =>
       '<optgroup label="' + group + '">' +
-      cats.map(c => '<option value="' + c + '">' + c + '</option>').join('') +
+      cats.map(c => { if (c === selected) known = true; return '<option value="' + escapeHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'; }).join('') +
       '</optgroup>'
     ).join('');
-    onExpenseCategoryChange();
+    if (selected && !known) html += '<option value="' + escapeHtml(selected) + '" selected>' + escapeHtml(selected) + '</option>';
+    return html;
   }
 
-  // Mostra il campo "Necessità" (Necessaria / Discrezionale) solo per i movimenti
-  // in addebito di categoria "Varie": per tutte le altre categorie il tipo di
-  // spesa è già implicito (es. "Mutuo", "Cibo") e il campo resta nascosto e
-  // non valorizzato. Richiamata sia al cambio di Categoria sia ogni volta che
-  // la select viene ripopolata (cambio Direzione, apertura modal).
-  function onExpenseCategoryChange() {
-    const cat = document.getElementById('expense-category').value;
-    const direction = document.getElementById('expense-direction').value;
-    const row = document.getElementById('expense-necessity-row');
-    const isVarie = direction === 'addebito' && cat === 'Varie';
-    row.style.display = isVarie ? 'flex' : 'none';
-    if (!isVarie) document.getElementById('expense-necessity').value = '';
+  function batchRowHtml(v) {
+    const dir = v.direction === 'accredito' ? 'accredito' : 'addebito';
+    return '<td><input type="date" class="batch-input b-date" value="' + escapeHtml(v.date || '') + '"></td>' +
+      '<td><select class="batch-input b-dir"><option value="addebito"' + (dir === 'addebito' ? ' selected' : '') + '>Uscita</option>' +
+        '<option value="accredito"' + (dir === 'accredito' ? ' selected' : '') + '>Entrata</option></select></td>' +
+      '<td><select class="batch-input b-mov">' + movementOptionsHtml(dir, v.movement) + '</select></td>' +
+      '<td><select class="batch-input b-cat">' + categoryOptionsHtml(dir, v.category) + '</select>' +
+        '<select class="batch-input b-nec" style="display:none;"><option value="">Necessità…</option>' +
+        '<option value="necessaria"' + (v.necessity === 'necessaria' ? ' selected' : '') + '>Necessaria (utenze, igiene, ecc.)</option>' +
+        '<option value="discrezionale"' + (v.necessity === 'discrezionale' ? ' selected' : '') + '>Discrezionale</option></select></td>' +
+      '<td><input type="text" class="batch-input b-desc" placeholder="es. Spesa Esselunga"></td>' +
+      '<td><input type="text" inputmode="decimal" class="batch-input b-amt" placeholder="0,00" style="text-align:right;"></td>' +
+      '<td><button class="btn-del-expense b-del" title="Rimuovi riga" tabindex="-1">✕</button></td>';
   }
 
-  function populateMovementSelect(direction) {
-    const opts = direction === 'accredito' ? MOVEMENT_OPTIONS_ACCREDITO : MOVEMENT_OPTIONS_ADDEBITO;
-    const sel = document.getElementById('expense-movement');
-    sel.innerHTML = opts.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('');
+  // Aggiunge una riga. Senza valori iniziali copia data, direzione e tipo
+  // dall'ultima riga (o dagli ultimi valori usati): categoria, descrizione e
+  // importo sono i soli campi che cambiano di solito da una riga all'altra.
+  function addBatchRow(init, focus) {
+    const body = document.getElementById('batchBody');
+    let v = init;
+    if (!v) {
+      const last = body.lastElementChild;
+      if (last) {
+        const r = readBatchRow(last);
+        v = { date: r.date, direction: r.direction, movement: r.movement };
+      } else {
+        const def = loadEntryDefaults();
+        const direction = def.direction === 'accredito' ? 'accredito' : 'addebito';
+        v = {
+          date: todayIsoLocal(),
+          direction: direction,
+          movement: (def.movements && def.movements[direction]) || (direction === 'accredito' ? 'bonifico' : 'carta_debito'),
+        };
+      }
+    }
+    const tr = document.createElement('tr');
+    tr.className = 'batch-row';
+    tr.innerHTML = batchRowHtml(v);
+    body.appendChild(tr);
+    tr.querySelector('.b-desc').value = v.description || '';
+    tr.querySelector('.b-amt').value = v.amountText != null ? v.amountText : (v.amount != null ? String(v.amount).replace('.', ',') : '');
+    if (v.suggested) tr.querySelector('.b-cat').classList.add('b-suggested');
+    syncBatchRowNecessity(tr);
+    batchWarnAck = false;
+    refreshBatch();
+    if (focus) tr.querySelector('.b-cat').focus();
+    return tr;
   }
 
-  // Richiamata quando l'utente cambia Direzione nel modal: aggiorna sia le opzioni
-  // di Tipo movimento sia quelle di Categoria, che sono diverse tra addebito e accredito.
-  function onExpenseDirectionChange() {
-    const direction = document.getElementById('expense-direction').value;
-    populateMovementSelect(direction);
-    populateCategorySelect(direction);
+  function readBatchRow(tr) {
+    return {
+      date: tr.querySelector('.b-date').value,
+      direction: tr.querySelector('.b-dir').value,
+      movement: tr.querySelector('.b-mov').value,
+      category: tr.querySelector('.b-cat').value,
+      necessity: tr.querySelector('.b-nec').value,
+      description: tr.querySelector('.b-desc').value.trim(),
+      amountRaw: tr.querySelector('.b-amt').value,
+    };
   }
 
-  function openExpenseModal() {
-    document.getElementById('expense-direction').value = 'addebito';
-    populateMovementSelect('addebito');
-    populateCategorySelect('addebito');
-    document.getElementById('expense-date').value = todayIsoLocal();
-    document.getElementById('expense-account').value = 'Fineco';
-    document.getElementById('expense-movement').value = 'carta_debito';
-    document.getElementById('expense-description').value = '';
-    document.getElementById('expense-amount').value = '';
-    document.getElementById('expense-necessity').value = '';
+  // "Necessità" compare solo per un'uscita di categoria "Varie".
+  function syncBatchRowNecessity(tr) {
+    const r = readBatchRow(tr);
+    const nec = tr.querySelector('.b-nec');
+    const isVarie = r.direction === 'addebito' && r.category === 'Varie';
+    nec.style.display = isVarie ? '' : 'none';
+    if (!isVarie) nec.value = '';
+  }
+
+  function onBatchRowDirectionChange(tr) {
+    const r = readBatchRow(tr);
+    tr.querySelector('.b-mov').innerHTML = movementOptionsHtml(r.direction, null);
+    tr.querySelector('.b-cat').innerHTML = categoryOptionsHtml(r.direction, null);
+    // Ricorda l'ultimo tipo usato per questa direzione, se è ancora valido.
+    const def = loadEntryDefaults();
+    const remembered = def.movements && def.movements[r.direction];
+    if (remembered) tr.querySelector('.b-mov').value = remembered;
+    syncBatchRowNecessity(tr);
+  }
+
+  function buildBatchEntry(r, amount, account, old) {
+    const entry = Object.assign({}, old || {}, {
+      id: old ? old.id : Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      date: r.date,
+      direction: r.direction,
+      account: account,
+      movement: r.movement,
+      category: r.category,
+      description: r.description,
+      amount: amount,
+    });
+    if (r.direction === 'addebito' && r.category === 'Varie') entry.necessity = r.necessity;
+    else delete entry.necessity;
+
+    if (r.direction === 'addebito' && r.movement === 'carta_credito') {
+      // Non scalata subito: verrà addebitata automaticamente il mese successivo
+      // (o due mesi dopo per spese BPER del 30/31, vedi ccDueMonthForPurchase).
+      // In modifica, un addebito già avvenuto sullo stesso conto resta tale;
+      // le voci importate (noBalance) non devono mai essere riaddebitate.
+      const wasCharged = old && old.ccApplied === true && (old.direction || 'addebito') === 'addebito' &&
+        old.movement === 'carta_credito' && old.account === account;
+      if (wasCharged || entry.noBalance) {
+        entry.ccApplied = true;
+        if (!entry.ccDueMonth) entry.ccDueMonth = ccDueMonthForPurchase(r.date, account);
+      } else {
+        entry.ccApplied = false;
+        entry.ccDueMonth = ccDueMonthForPurchase(r.date, account);
+        delete entry.ccAppliedOn;
+      }
+    } else {
+      delete entry.ccApplied;
+      delete entry.ccDueMonth;
+      delete entry.ccAppliedOn;
+    }
+    return entry;
+  }
+
+  // Controlla tutte le righe: errori (bloccano la riga) e avvisi (da confermare).
+  function validateBatch() {
+    const account = document.getElementById('expense-account').value;
+    const today = todayIsoLocal();
+    const todayN = dayNumber(today);
+    const rows = Array.from(document.querySelectorAll('#batchBody .batch-row'));
+    const items = rows.map((tr, i) => {
+      const r = readBatchRow(tr);
+      const amount = parseAmountInput(r.amountRaw);
+      const blank = amount === null && !r.description && !r.category;
+      const errors = [];
+      const warnings = [];
+      if (!blank) {
+        if (amount === null) errors.push('importo mancante');
+        else if (isNaN(amount)) errors.push('importo non valido o ambiguo (scrivi es. 12,50 oppure 1234,00)');
+        if (!r.date || !isValidIsoDate(r.date)) errors.push('data mancante o non valida');
+        if (!r.category) errors.push('scegli una categoria');
+        if (r.direction === 'addebito' && r.category === 'Varie' && !r.necessity) errors.push('per "Varie" indica se è Necessaria o Discrezionale');
+        if (r.date && isValidIsoDate(r.date)) {
+          const n = dayNumber(r.date);
+          if (n > todayN) warnings.push('data futura (' + r.date + ')');
+          else if (todayN - n > BATCH_OLD_DAYS) warnings.push('data di oltre ' + BATCH_OLD_DAYS + ' giorni fa (' + r.date + ')');
+        }
+      }
+      return { tr: tr, index: i, r: r, amount: amount, blank: blank, errors: errors, warnings: warnings };
+    });
+
+    // Possibili duplicati: stessa direzione e importo, data entro ±3 giorni.
+    items.forEach(it => {
+      if (it.blank || !(it.amount > 0) || !isValidIsoDate(it.r.date)) return;
+      const n = dayNumber(it.r.date);
+      const dup = expenses.find(e => e.id !== expenseEditId && e.account === account &&
+        (e.direction || 'addebito') === it.r.direction && Math.abs(e.amount - it.amount) < 0.005 &&
+        e.date && Math.abs(dayNumber(e.date) - n) <= BATCH_DUP_DAYS);
+      if (dup) it.warnings.push('possibile duplicato di un movimento già registrato (' + dup.date + (dup.description ? ', «' + dup.description + '»' : '') + ')');
+      items.forEach(o => {
+        if (o.index >= it.index || o.blank || !(o.amount > 0) || !isValidIsoDate(o.r.date)) return;
+        if (o.r.direction === it.r.direction && Math.abs(o.amount - it.amount) < 0.005 && Math.abs(dayNumber(o.r.date) - n) <= BATCH_DUP_DAYS) {
+          it.warnings.push('uguale alla riga ' + (o.index + 1) + ' (stesso importo, data vicina)');
+        }
+      });
+    });
+    return { account: account, items: items };
+  }
+
+  // Aggiorna evidenziazioni, messaggi, riepilogo e testo del pulsante Salva.
+  function refreshBatch() {
+    if (!document.getElementById('expenseModalOverlay').classList.contains('open')) return;
+    const v = validateBatch();
+    const multi = !expenseEditId;
+    const msgs = [];
+    let warnCount = 0;
+    v.items.forEach(it => {
+      const showErr = batchTried && it.errors.length > 0;
+      it.tr.classList.toggle('has-err', showErr);
+      it.tr.classList.toggle('has-warn', it.warnings.length > 0);
+      const label = multi ? 'Riga ' + (it.index + 1) + ': ' : '';
+      if (showErr) msgs.push('<div class="batch-msg err">' + label + escapeHtml(it.errors.join('; ')) + '</div>');
+      it.warnings.forEach(w => { warnCount++; msgs.push('<div class="batch-msg warn">⚠ ' + label + escapeHtml(w) + '</div>'); });
+    });
+    document.getElementById('batchMsgs').innerHTML = msgs.join('');
+
+    // Riepilogo con il saldo del conto prima e dopo (carte di credito escluse: addebito differito).
+    const filled = v.items.filter(it => !it.blank && it.amount > 0);
+    const usc = filled.filter(it => it.r.direction === 'addebito').reduce((s, it) => s + it.amount, 0);
+    const ent = filled.filter(it => it.r.direction === 'accredito').reduce((s, it) => s + it.amount, 0);
+    const old = expenseEditId ? expenses.find(e => e.id === expenseEditId) : null;
+    let delta = 0;
+    filled.forEach(it => {
+      delta += balanceEffect(buildBatchEntry(it.r, it.amount, v.account, old));
+    });
+    if (old && old.account === v.account) delta -= balanceEffect(old);
+    const cur = loadData()[ACCOUNT_KEY_MAP[v.account]] || 0;
+    const eur = n => '€' + n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let text = '';
+    if (filled.length) {
+      text = (multi ? filled.length + (filled.length === 1 ? ' movimento' : ' movimenti') + ' — ' : '') +
+        'uscite ' + eur(usc) + ', entrate ' + eur(ent) + ' · saldo ' + v.account + ' ' + eur(cur) + ' → ' + eur(cur + delta);
+    }
+    if (old && old.noBalance) text += ' (voce importata: il saldo non cambia)';
+    document.getElementById('batchSummary').textContent = text;
+
+    const btn = document.getElementById('batchSaveBtn');
+    btn.textContent = batchWarnAck && warnCount ? 'Salva comunque (' + warnCount + (warnCount === 1 ? ' avviso)' : ' avvisi)') : 'Salva';
+  }
+
+  function openExpenseModal(editId) {
+    const def = loadEntryDefaults();
+    const old = editId ? expenses.find(e => e.id === editId) : null;
+    expenseEditId = old ? old.id : null;
+    batchTried = false;
+    batchWarnAck = false;
+    document.getElementById('expenseModalTitle').textContent = old ? '✏️ Modifica movimento' : '💸 Aggiungi movimentazioni';
+    document.getElementById('batchAddRowBtn').style.display = old ? 'none' : '';
+    document.getElementById('batchPasteBtn').style.display = old ? 'none' : '';
+    document.getElementById('batchPasteBox').classList.remove('open');
+    document.getElementById('batchBody').innerHTML = '';
+    const account = old ? old.account : (def.account && ACCOUNT_KEY_MAP[def.account] ? def.account : 'Fineco');
+    document.getElementById('expense-account').value = account;
     document.getElementById('expenseModalOverlay').classList.add('open');
+    if (old) {
+      addBatchRow({
+        date: old.date, direction: old.direction || 'addebito', movement: old.movement,
+        category: old.category, necessity: old.necessity, description: old.description, amount: old.amount,
+      }, false);
+    } else {
+      addBatchRow(null, true);
+    }
   }
 
   function closeExpenseModal() {
     document.getElementById('expenseModalOverlay').classList.remove('open');
+    expenseEditId = null;
   }
 
-  function addExpense() {
-    const amount = parseFloat(document.getElementById('expense-amount').value);
-    if (!amount || amount <= 0) {
-      alert('Inserisci un importo valido maggiore di zero.');
+  function saveExpenseBatch() {
+    batchTried = true;
+    const v = validateBatch();
+    const valid = v.items.filter(it => !it.blank && it.errors.length === 0);
+    const withWarnings = valid.filter(it => it.warnings.length > 0);
+    if (!valid.length) {
+      refreshBatch();
+      if (v.items.every(it => it.blank)) {
+        document.getElementById('batchMsgs').innerHTML = '<div class="batch-msg err">Nessun movimento da salvare: compila almeno importo e categoria.</div>';
+      }
       return;
     }
-    const date = document.getElementById('expense-date').value || todayIsoLocal();
-    const account = document.getElementById('expense-account').value;
-    const direction = document.getElementById('expense-direction').value === 'accredito' ? 'accredito' : 'addebito';
-    const movement = document.getElementById('expense-movement').value;
-    const category = document.getElementById('expense-category').value;
-
-    // Per i movimenti in addebito di categoria "Varie" la distinzione tra spesa
-    // necessaria e discrezionale è obbligatoria: senza è una voce troppo generica
-    // per essere utile in un'analisi successiva.
-    const isVarie = direction === 'addebito' && category === 'Varie';
-    const necessity = document.getElementById('expense-necessity').value;
-    if (isVarie && !necessity) {
-      alert('Per la categoria "Varie" indica se la spesa è Necessaria o Discrezionale.');
+    // Gli avvisi non bloccano, ma vanno confermati con un secondo clic.
+    if (withWarnings.length && !batchWarnAck) {
+      batchWarnAck = true;
+      refreshBatch();
       return;
     }
 
-    const entry = {
-      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-      date: date,
-      direction: direction,
-      account: account,
-      movement: movement,
-      category: category,
-      description: document.getElementById('expense-description').value.trim(),
-      amount: amount,
-    };
-    if (isVarie) entry.necessity = necessity;
+    const old = expenseEditId ? expenses.find(e => e.id === expenseEditId) : null;
+    if (expenseEditId && !old) { closeExpenseModal(); return; } // eliminato nel frattempo
 
-    if (direction === 'addebito' && movement === 'carta_credito') {
-      // Non scalata subito: verrà addebitata automaticamente il mese successivo
-      // (o due mesi dopo per spese BPER del 30/31, vedi ccDueMonthForPurchase).
-      entry.ccApplied = false;
-      entry.ccDueMonth = ccDueMonthForPurchase(date, account);
+    const undoSnap = captureUndo();
+
+    // Saldi: un solo aggiustamento per conto. In modifica si storna l'effetto
+    // vecchio (sul vecchio conto) e si applica il nuovo.
+    const deltas = {};
+    const addDelta = (acc, d) => { deltas[acc] = (deltas[acc] || 0) + d; };
+    const saved = valid.map(it => {
+      const entry = buildBatchEntry(it.r, it.amount, v.account, old);
+      addDelta(entry.account, balanceEffect(entry));
+      return { it: it, entry: entry };
+    });
+    if (old) addDelta(old.account, -balanceEffect(old));
+    Object.keys(deltas).forEach(acc => {
+      if (Math.abs(deltas[acc]) > 0.0001) adjustAccountBalance(acc, deltas[acc]);
+    });
+
+    if (old) {
+      expenses = expenses.map(e => e.id === old.id ? saved[0].entry : e);
     } else {
-      // Addebiti (contanti, ritiro contanti, carta di debito, bonifico): scalati
-      // subito. Accrediti: aggiunti subito, sempre immediati.
-      adjustAccountBalance(account, direction === 'accredito' ? amount : -amount);
+      saved.forEach(s => expenses.push(s.entry));
     }
-
-    expenses.push(entry);
     expenses.sort((a, b) => b.date.localeCompare(a.date));
     saveExpenses(expenses);
+
+    // Ultimi valori usati, dall'ultima riga salvata.
+    const lastRow = saved[saved.length - 1].it.r;
+    const def = loadEntryDefaults();
+    def.account = v.account;
+    def.direction = lastRow.direction;
+    def.movements = Object.assign({}, def.movements);
+    def.movements[lastRow.direction] = lastRow.movement;
+    saveEntryDefaults(def);
+    learnCategoryRules(saved.map(s => ({ description: s.entry.description, direction: s.entry.direction, category: s.entry.category })));
+
     touchLastModified();
-    closeExpenseModal();
+    offerUndo(undoSnap, old ? 'Movimento modificato' : (saved.length === 1 ? '1 movimento salvato' : saved.length + ' movimenti salvati'));
+
+    // Le righe salvate escono dalla tabella; quelle con errori restano da correggere.
+    saved.forEach(s => s.it.tr.remove());
+    const remaining = document.querySelectorAll('#batchBody .batch-row');
+    const onlyBlank = Array.from(remaining).every(tr => validateBatch().items.find(i => i.tr === tr).blank);
+    render(loadData());
+    renderExpenses();
+    renderAnnualAnalysis();
+    if (!remaining.length || onlyBlank) {
+      closeExpenseModal();
+    } else {
+      batchWarnAck = false;
+      refreshBatch();
+    }
+  }
+
+  // Categoria suggerita dalla descrizione: prima le regole apprese (le stesse
+  // dell'importazione estratti), poi la categoria più usata finora per la
+  // stessa descrizione. Mai "Varie" (richiede la Necessità): null se non sa.
+  function suggestCategory(description, direction) {
+    const m = { description: description, direction: direction };
+    const key = categoryRuleKey(m);
+    if (key.slice(key.indexOf('|') + 1) === '') return null;
+    const groups = direction === 'accredito' ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
+    const valid = new Set(Object.values(groups).flat());
+    const learned = loadCategoryRules()[key];
+    if (learned && valid.has(learned) && learned !== 'Varie') return learned;
+    const counts = {};
+    expenses.forEach(e => {
+      if (e.autoMortgage || (e.direction || 'addebito') !== direction) return;
+      if (!valid.has(e.category) || e.category === 'Varie') return;
+      if (categoryRuleKey({ description: e.description, direction: direction }) === key) counts[e.category] = (counts[e.category] || 0) + 1;
+    });
+    const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+    return best || null;
+  }
+
+  // Impara le regole di categoria dalle righe appena salvate (categorie scelte
+  // da te o suggerite da regole/storico tuo, non da AI).
+  function learnCategoryRules(rows) {
+    const rules = loadCategoryRules();
+    let changed = false;
+    rows.forEach(r => {
+      if (!r.description || r.category === 'Varie') return;
+      const key = categoryRuleKey(r);
+      if (key.slice(key.indexOf('|') + 1) === '') return;
+      if (rules[key] !== r.category) { rules[key] = r.category; changed = true; }
+    });
+    if (changed) store.setItem(CATEGORY_RULES_KEY, JSON.stringify(rules));
+  }
+
+  // ----- Incolla righe -----
+  function toggleBatchPaste() {
+    document.getElementById('batchPasteBox').classList.toggle('open');
+    document.getElementById('batchPasteText').focus();
+  }
+
+  function parsePastedDate(t) {
+    t = String(t || '').trim();
+    let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    let y, mo, d;
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else if ((m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+    else return '';
+    const iso = y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    return isValidIsoDate(iso) ? iso : '';
+  }
+
+  // Trasforma il testo incollato in valori di riga. Le righe non interpretabili
+  // non vengono scartate: diventano righe con il campo vuoto, così l'errore è
+  // visibile nella revisione invece di perdere un movimento in silenzio.
+  function parsePastedRows(text) {
+    const def = loadEntryDefaults();
+    const moveFor = dir => (def.movements && def.movements[dir]) || (dir === 'accredito' ? 'bonifico' : 'carta_debito');
+    return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
+      let parts = line.indexOf('\t') >= 0 ? line.split('\t') : line.indexOf(';') >= 0 ? line.split(';') : null;
+      if (!parts) {
+        const m = line.match(/^(\S+)\s+(.*?)\s+([+\-−]?\s*[\d.,]+)\s*€?$/);
+        parts = m ? [m[1], m[2], m[3]] : [line];
+      }
+      parts = parts.map(p => p.trim());
+      const dateIso = parsePastedDate(parts[0]);
+      const amountCell = parts.length > 1 ? parts[parts.length - 1] : '';
+      const description = parts.length > 2 ? parts.slice(1, -1).join(' ').trim() : '';
+      const sign = amountCell.replace(/[\s€]/g, '').charAt(0);
+      const direction = sign === '+' ? 'accredito' : 'addebito';
+      const amountText = amountCell.replace(/[\s€+\-−]/g, '');
+      const category = suggestCategory(description, direction);
+      return {
+        date: dateIso, direction: direction, movement: moveFor(direction), category: category || '',
+        description: description, amountText: amountText, suggested: !!category,
+      };
+    });
+  }
+
+  function applyBatchPaste() {
+    if (expenseEditId) return;
+    const box = document.getElementById('batchPasteText');
+    const rows = parsePastedRows(box.value);
+    if (!rows.length) return;
+    // Se c'è solo la riga vuota iniziale, la sostituisce.
+    const body = document.getElementById('batchBody');
+    if (body.children.length === 1 && validateBatch().items[0].blank) body.innerHTML = '';
+    rows.forEach(r => addBatchRow(r, false));
+    box.value = '';
+    document.getElementById('batchPasteBox').classList.remove('open');
+    batchTried = true; // le righe incollate vanno riviste: errori subito visibili
+    batchWarnAck = false;
+    refreshBatch();
+  }
+
+  // ----- Annulla -----
+  // Istantanea di saldi e movimenti prima dell'operazione; valida solo se nel
+  // frattempo non è stato modificato altro (confronto con l'ultima modifica).
+  let undoState = null;
+  let undoTimer = null;
+
+  function captureUndo() {
+    return { v5: store.getItem(STORAGE_KEY), exp: store.getItem(EXPENSE_STORAGE_KEY) };
+  }
+
+  function hideUndoToast() {
+    if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+    undoState = null;
+    document.getElementById('undoToast').classList.remove('open');
+  }
+
+  function offerUndo(snapshot, label) {
+    snapshot.stamp = store.getItem(LAST_MODIFIED_KEY);
+    undoState = snapshot;
+    document.getElementById('undoToastText').textContent = label;
+    document.getElementById('undoToast').classList.add('open');
+    if (undoTimer) clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndoToast, 10000);
+  }
+
+  function undoLast() {
+    const st = undoState;
+    if (!st) return;
+    if (store.getItem(LAST_MODIFIED_KEY) !== st.stamp) {
+      hideUndoToast();
+      alert('Non posso annullare: i dati sono cambiati nel frattempo.');
+      return;
+    }
+    if (st.v5 != null) store.setItem(STORAGE_KEY, st.v5);
+    if (st.exp != null) store.setItem(EXPENSE_STORAGE_KEY, st.exp);
+    expenses = loadExpenses();
+    touchLastModified();
+    hideUndoToast();
+    render(loadData());
+    renderExpenses();
+    renderAnnualAnalysis();
+  }
+
+  // Delegazione sugli eventi della tabella righe (create dinamicamente).
+  (function setupBatchEvents() {
+    const body = document.getElementById('batchBody');
+    body.addEventListener('change', function(e) {
+      const tr = e.target.closest('.batch-row');
+      if (!tr) return;
+      if (e.target.classList.contains('b-dir')) onBatchRowDirectionChange(tr);
+      else if (e.target.classList.contains('b-cat')) {
+        e.target.classList.remove('b-suggested');
+        syncBatchRowNecessity(tr);
+      } else if (e.target.classList.contains('b-desc') && !expenseEditId) {
+        // Descrizione scritta e categoria ancora vuota: propone quella usata di solito.
+        const r = readBatchRow(tr);
+        const sug = !r.category && r.description ? suggestCategory(r.description, r.direction) : null;
+        if (sug) {
+          tr.querySelector('.b-cat').value = sug;
+          tr.querySelector('.b-cat').classList.add('b-suggested');
+          syncBatchRowNecessity(tr);
+        }
+      }
+      batchWarnAck = false;
+      refreshBatch();
+    });
+    body.addEventListener('input', function() { batchWarnAck = false; refreshBatch(); });
+    body.addEventListener('click', function(e) {
+      const btn = e.target.closest('.b-del');
+      if (!btn) return;
+      const tr = btn.closest('.batch-row');
+      tr.remove();
+      if (!body.children.length && !expenseEditId) addBatchRow(null, false);
+      batchWarnAck = false;
+      refreshBatch();
+    });
+    // Tab o Invio sull'importo dell'ultima riga aggiunge la riga successiva.
+    body.addEventListener('keydown', function(e) {
+      if (!e.target.classList.contains('b-amt') || expenseEditId) return;
+      if (e.key !== 'Enter' && !(e.key === 'Tab' && !e.shiftKey)) return;
+      const tr = e.target.closest('.batch-row');
+      if (tr !== body.lastElementChild) {
+        if (e.key === 'Enter') { e.preventDefault(); tr.nextElementSibling.querySelector('.b-cat').focus(); }
+        return;
+      }
+      if (!e.target.value.trim()) return;
+      e.preventDefault();
+      addBatchRow(null, true);
+    });
+  })();
+
+  // ===== Duplica e modifica in blocco =====
+  let selectedExpenseIds = new Set();
+
+  // Apre il modal di inserimento con una copia del movimento (data di oggi),
+  // da correggere e salvare: comodo per spese ricorrenti quasi identiche.
+  function duplicateExpense(id) {
+    const e = expenses.find(x => x.id === id);
+    if (!e) return;
+    openExpenseModal();
+    document.getElementById('expense-account').value = e.account;
+    document.getElementById('batchBody').innerHTML = '';
+    addBatchRow({
+      date: todayIsoLocal(), direction: e.direction || 'addebito', movement: e.movement,
+      category: e.category, necessity: e.necessity, description: e.description, amount: e.amount,
+    }, false);
+    document.querySelector('#batchBody .b-date').focus();
+  }
+
+  function toggleExpenseSelected(id, on) {
+    if (on) selectedExpenseIds.add(id); else selectedExpenseIds.delete(id);
+    renderExpenseBulkBar();
+  }
+
+  function toggleSelectAllExpenses(on) {
+    getFilteredExpenses().forEach(e => { if (on) selectedExpenseIds.add(e.id); else selectedExpenseIds.delete(e.id); });
+    renderExpenseTable();
+  }
+
+  function clearExpenseSelection() {
+    selectedExpenseIds = new Set();
+    renderExpenseTable();
+  }
+
+  // Barra sopra la tabella: cambia categoria e/o conto dei movimenti selezionati.
+  // La categoria è proponibile solo se la selezione ha una direzione sola (le
+  // categorie di entrata e di uscita sono diverse); "Varie" è esclusa perché
+  // richiede la Necessità, che si imposta dalla modifica del singolo movimento.
+  function renderExpenseBulkBar() {
+    const bar = document.getElementById('expenseBulkBar');
+    if (!bar) return;
+    selectedExpenseIds = new Set(Array.from(selectedExpenseIds).filter(id => expenses.some(e => e.id === id)));
+    const sel = expenses.filter(e => selectedExpenseIds.has(e.id));
+    const all = document.getElementById('expenseSelectAll');
+    if (all) {
+      const filtered = getFilteredExpenses();
+      all.checked = filtered.length > 0 && filtered.every(e => selectedExpenseIds.has(e.id));
+    }
+    if (!sel.length) { bar.classList.remove('open'); bar.innerHTML = ''; return; }
+    const dirs = new Set(sel.map(e => e.direction || 'addebito'));
+    let catHtml;
+    if (dirs.size === 1) {
+      const groups = dirs.has('accredito') ? CATEGORY_GROUPS_ENTRATE : CATEGORY_GROUPS;
+      catHtml = '<select id="bulk-category"><option value="">Categoria: non cambiare</option>' +
+        Object.entries(groups).map(([g, cats]) => '<optgroup label="' + g + '">' +
+          cats.filter(c => c !== 'Varie').map(c => '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>').join('') + '</optgroup>').join('') + '</select>';
+    } else {
+      catHtml = '<select id="bulk-category" disabled title="Selezione mista di entrate e uscite"><option value="">Categoria: selezione mista</option></select>';
+    }
+    bar.innerHTML = '<strong>' + sel.length + (sel.length === 1 ? ' selezionato' : ' selezionati') + '</strong>' + catHtml +
+      '<select id="bulk-account"><option value="">Conto: non cambiare</option>' +
+      Object.keys(ACCOUNT_KEY_MAP).map(a => '<option value="' + a + '">' + a + '</option>').join('') + '</select>' +
+      '<button class="btn-save" style="padding:5px 12px;" onclick="applyBulkEdit()">Applica</button>' +
+      '<button class="btn-cancel" style="padding:5px 12px;" onclick="clearExpenseSelection()">Deseleziona</button>';
+    bar.classList.add('open');
+  }
+
+  function applyBulkEdit() {
+    const category = document.getElementById('bulk-category').value;
+    const account = document.getElementById('bulk-account').value;
+    if (!category && !account) { alert('Scegli una categoria o un conto da applicare.'); return; }
+    const sel = expenses.filter(e => selectedExpenseIds.has(e.id));
+    if (!sel.length) return;
+    if (!confirm('Modificare ' + sel.length + (sel.length === 1 ? ' movimento' : ' movimenti') + '?' +
+        (category ? '\nCategoria → ' + category : '') + (account ? '\nConto → ' + account : ''))) return;
+
+    const undoSnap = captureUndo();
+    const deltas = {};
+    const addDelta = (acc, d) => { deltas[acc] = (deltas[acc] || 0) + d; };
+    const updated = new Map();
+    sel.forEach(e => {
+      const r = {
+        date: e.date, direction: e.direction || 'addebito', movement: e.movement,
+        category: category || e.category, necessity: e.necessity, description: e.description || '',
+      };
+      const n = buildBatchEntry(r, e.amount, account || e.account, e);
+      addDelta(e.account, -balanceEffect(e));
+      addDelta(n.account, balanceEffect(n));
+      updated.set(e.id, n);
+    });
+    Object.keys(deltas).forEach(acc => {
+      if (Math.abs(deltas[acc]) > 0.0001) adjustAccountBalance(acc, deltas[acc]);
+    });
+    expenses = expenses.map(e => updated.get(e.id) || e);
+    saveExpenses(expenses);
+    if (category) learnCategoryRules(Array.from(updated.values()).map(n => ({ description: n.description, direction: n.direction, category: n.category })));
+    touchLastModified();
+    offerUndo(undoSnap, sel.length + (sel.length === 1 ? ' movimento modificato' : ' movimenti modificati'));
+    selectedExpenseIds = new Set();
     render(loadData());
     renderExpenses();
     renderAnnualAnalysis();
@@ -3325,6 +3932,7 @@
 
   function deleteExpense(id) {
     const entry = expenses.find(e => e.id === id);
+    const undoSnap = captureUndo();
     // Le voci importate da estratto conto (noBalance) non hanno mai toccato i saldi.
     if (entry && !entry.noBalance) {
       const direction = entry.direction || 'addebito';
@@ -3342,6 +3950,7 @@
     expenses = expenses.filter(e => e.id !== id);
     saveExpenses(expenses);
     touchLastModified();
+    offerUndo(undoSnap, 'Movimento eliminato');
     render(loadData());
     renderExpenses();
     renderAnnualAnalysis();
@@ -3415,7 +4024,7 @@
       document.querySelector('.expense-table-wrap').innerHTML = '<div class="expense-empty">Nessun movimento corrisponde ai filtri selezionati.</div>';
     } else {
       document.querySelector('.expense-table-wrap').innerHTML =
-        '<table class="expense-table"><thead><tr><th>Data</th><th>Conto</th><th>Categoria / Descrizione</th><th>Movimento</th><th style="text-align:right;">Importo</th><th></th></tr></thead><tbody id="expenseTableBody"></tbody></table>';
+        '<table class="expense-table"><thead><tr><th style="width:22px;"><input type="checkbox" id="expenseSelectAll" title="Seleziona tutti i movimenti filtrati" onchange="toggleSelectAllExpenses(this.checked)"></th><th>Data</th><th>Conto</th><th>Categoria / Descrizione</th><th>Movimento</th><th style="text-align:right;">Importo</th><th></th></tr></thead><tbody id="expenseTableBody"></tbody></table>';
       document.getElementById('expenseTableBody').innerHTML = filtered.map(e => {
         const direction = e.direction || 'addebito';
         const isCredit = direction === 'accredito';
@@ -3424,6 +4033,7 @@
         const necessityLabel = e.necessity === 'necessaria' ? '🔧 Necessaria'
           : e.necessity === 'discrezionale' ? '🎯 Discrezionale' : '';
         return '<tr>' +
+        '<td><input type="checkbox" ' + (selectedExpenseIds.has(e.id) ? 'checked ' : '') + 'onchange="toggleExpenseSelected(\'' + e.id + '\', this.checked)"></td>' +
         '<td>' + e.date + '</td>' +
         '<td><span class="expense-account-tag">' + e.account + '</span></td>' +
         '<td>' + escapeHtml(e.category) +
@@ -3436,10 +4046,14 @@
             : '') +
         '</td>' +
         '<td class="' + amountClass + '">' + amountPrefix + fmt(e.amount) + '</td>' +
-        '<td><button class="btn-del-expense" onclick="deleteExpense(\'' + e.id + '\')" title="Elimina">✕</button></td>' +
+        '<td style="white-space:nowrap;"><button class="btn-edit-expense" onclick="openExpenseModal(\'' + e.id + '\')" title="Modifica">✏️</button>' +
+          '<button class="btn-edit-expense" onclick="duplicateExpense(\'' + e.id + '\')" title="Duplica">⧉</button>' +
+          '<button class="btn-del-expense" onclick="deleteExpense(\'' + e.id + '\')" title="Elimina">✕</button></td>' +
         '</tr>';
       }).join('');
     }
+
+    renderExpenseBulkBar();
 
     const summaryEl = document.getElementById('expenseFilterSummary');
     if (!filtersActive) {
@@ -5302,7 +5916,8 @@
   });
 
   document.getElementById('expenseModalOverlay').addEventListener('click', function(e) {
-    if (e.target === this) closeExpenseModal();
+    // Un clic fuori dal modal non deve far perdere un lotto già compilato.
+    if (e.target === this && !validateBatch().items.some(it => !it.blank)) closeExpenseModal();
   });
 
   document.getElementById('transferModalOverlay').addEventListener('click', function(e) {
