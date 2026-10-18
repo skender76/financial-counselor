@@ -2,9 +2,10 @@
 Fornitori AI e chiavi API per il consulente della Dashboard Finanziaria.
 
 Le chiavi si gestiscono dalla dashboard (sezione "🔑 Chiavi API": aggiungi,
-modifica, elimina, scegli quella in uso) e sono salvate in ai-config.json,
-nella stessa cartella di questo file: escluso da git, permessi 600, separato
-da dati.json così le chiavi non finiscono mai in export o backup. Formato:
+modifica, elimina, scegli quella in uso) e sono salvate per ciascun utente nella
+tabella user_ai_config di app.db (vedi auth.py): separate dai dati della
+dashboard, così le chiavi non finiscono mai in export o backup. Ogni utente vede
+e usa solo le proprie chiavi. Formato:
 
     {
       "active_key_id": "k_1a2b3c4d5e6f",
@@ -20,7 +21,7 @@ ultimi quattro usano l'SDK openai con il loro indirizzo, vedi
 OpenAICompatibleProvider). Il consulente usa solo la chiave attiva (active_key_id): se è scaduta, la
 richiesta viene rifiutata con un messaggio chiaro. "model" vuoto = modello
 predefinito del fornitore (solo Anthropic ne ha uno; per OpenAI e Gemini è
-obbligatorio). Il file viene riletto a ogni richiesta: nessun riavvio.
+obbligatorio). La configurazione viene riletta a ogni richiesta: nessun riavvio.
 Il valore di una chiave non viene MAI restituito alla pagina, solo le
 ultime 4 cifre.
 
@@ -35,14 +36,13 @@ AdvisorError con un messaggio in italiano da mostrare in chat.
 
 import datetime
 import json
-import os
 import secrets
 import threading
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE = os.path.join(BASE_DIR, 'ai-config.json')
+import auth
+
 EXPIRY_WARNING_DAYS = 14
-# Serializza lettura-modifica-scrittura di ai-config.json (il server è multi-thread).
+# Serializza lettura-modifica-scrittura delle chiavi (il server è multi-thread).
 CONFIG_LOCK = threading.RLock()
 TRUNCATED_NOTE = '\n\n[risposta troncata: limite di lunghezza raggiunto]'
 
@@ -56,10 +56,10 @@ class AdvisorError(Exception):
 
 
 class Provider:
-    name = ''           # chiave in ai-config.json
+    name = ''           # nome del fornitore nella configurazione delle chiavi
     label = ''          # nome leggibile, mostrato nella dashboard
     package = ''        # pacchetto pip dell'SDK ufficiale
-    default_model = ''  # vuoto = il modello va indicato in ai-config.json
+    default_model = ''  # vuoto = il modello va indicato nella chiave
 
     def __init__(self):
         self._client = None
@@ -322,31 +322,27 @@ PROVIDERS = {p.name: p for p in (
 )}
 
 
-# ===== ai-config.json: elenco delle chiavi API =====
+# ===== Chiavi API di ogni utente (tabella user_ai_config) =====
 
-def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        return {'active_key_id': None, 'keys': []}
+def load_config(user_id):
     try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        raise AdvisorError('ai-config.json non è leggibile (%s): controlla la sintassi JSON.' % e, 500)
+        config = auth.read_ai_config(user_id)
+    except RuntimeError as e:
+        raise AdvisorError('chiavi non leggibili: %s' % e, 500)
+    if config is None:
+        return {'active_key_id': None, 'keys': []}
     if not isinstance(config, dict) or not isinstance(config.get('keys', []), list):
-        raise AdvisorError('ai-config.json non ha il formato atteso (vedi ai-config.example.json).', 500)
+        raise AdvisorError('la configurazione delle chiavi API non ha il formato atteso.', 500)
     config.setdefault('keys', [])
     config.setdefault('active_key_id', None)
     return config
 
 
-def save_config(config):
-    # Scrittura atomica (file temporaneo + rename), leggibile solo dall'utente.
-    tmp_path = CONFIG_FILE + '.tmp'
-    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-    os.chmod(tmp_path, 0o600)
-    os.replace(tmp_path, CONFIG_FILE)
+def save_config(user_id, config):
+    try:
+        auth.write_ai_config(user_id, config)
+    except RuntimeError as e:
+        raise AdvisorError('chiavi non salvabili: %s' % e, 500)
 
 
 def _expiry_date(key):
@@ -388,9 +384,9 @@ def _public_key(key, active_id):
     }
 
 
-def list_keys():
+def list_keys(user_id):
     with CONFIG_LOCK:
-        config = load_config()
+        config = load_config(user_id)
     active_id = config.get('active_key_id')
     return {
         'keys': [_public_key(k, active_id) for k in config['keys']],
@@ -448,11 +444,11 @@ def _find(config, key_id):
     raise AdvisorError('chiave non trovata (forse è già stata eliminata).', 404)
 
 
-def manage_keys(request):
+def manage_keys(user_id, request):
     """Azioni della sezione "Chiavi API": add, update, delete, activate."""
     action = request.get('action')
     with CONFIG_LOCK:
-        config = load_config()
+        config = load_config(user_id)
         if action == 'add':
             key = _clean_fields(request)
             key['id'] = 'k_' + secrets.token_hex(6)
@@ -474,16 +470,16 @@ def manage_keys(request):
             config['active_key_id'] = key['id']
         else:
             raise AdvisorError('azione non valida.', 400)
-        save_config(config)
-    return list_keys()
+        save_config(user_id, config)
+    return list_keys(user_id)
 
 
 # ===== Consulente: usa la chiave attiva =====
 
-def resolve():
+def resolve(user_id):
     """Restituisce (provider, chiave attiva o None, modello)."""
     with CONFIG_LOCK:
-        config = load_config()
+        config = load_config(user_id)
     active_id = config.get('active_key_id')
     key = next((k for k in config['keys'] if k['id'] == active_id), None)
     if key is None:
@@ -510,18 +506,18 @@ def check_ready(provider, key, model):
     return None
 
 
-def ask(prompt):
-    provider, key, model = resolve()
+def ask(user_id, prompt):
+    provider, key, model = resolve(user_id)
     problem = check_ready(provider, key, model)
     if problem:
         raise AdvisorError(problem, 503)
     return provider.ask(key['value'], model, prompt)
 
 
-def info():
+def info(user_id):
     """Stato del consulente, per la dashboard e per il messaggio di avvio."""
     try:
-        provider, key, model = resolve()
+        provider, key, model = resolve(user_id)
     except AdvisorError as e:
         return {'label': None, 'model': None, 'key_name': None, 'ready': False, 'problem': str(e)}
     problem = check_ready(provider, key, model)

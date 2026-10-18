@@ -485,6 +485,19 @@
     .transfer-arrow { color: var(--text-muted); font-weight: 400; }
     .transfer-amount { font-weight: 700; color: var(--blue); text-align: right; white-space: nowrap; }
   </style>
+<style>
+  .auth-box { max-width: 380px; margin: 80px auto; padding: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .auth-box h1 { font-size: 20px; margin-bottom: 4px; }
+  .auth-box p.auth-sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 18px; }
+  .auth-box label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 12px 0 4px; }
+  .auth-box input { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-primary); font-size: 14px; }
+  .auth-box button.auth-submit { width: 100%; margin-top: 18px; padding: 10px; border: 0; border-radius: 8px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .auth-box button.auth-submit:disabled { opacity: .6; cursor: default; }
+  .auth-box .auth-error { color: var(--red); font-size: 13px; margin-top: 12px; min-height: 18px; }
+  .sec-field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 10px 0 4px; }
+  .sec-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-primary); font-size: 14px; }
+  .auth-box .auth-switch { background: none; border: 0; color: var(--blue); font-size: 13px; cursor: pointer; margin-top: 14px; padding: 0; }
+</style>
 </head>
 <body>
 
@@ -499,7 +512,9 @@
     <button class="btn-edit" onclick="openStatementModal()" title="Carica l'estratto conto di Revolut, BPER o Fineco">📑 Importa estratto conto</button>
     <button class="btn-edit" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
     <button class="btn-edit" onclick="openModal()">✏️ Aggiorna dati</button>
-    <button class="btn-edit" onclick="shutdownDashboard()" title="Salva i dati e ferma il server locale della dashboard">⏻ Chiudi dashboard</button>
+    <span class="header-meta" id="userEmailDisplay" style="font-size:11px;"></span>
+    <button class="btn-edit" onclick="openSecurityModal()" title="Password e verifica in due passaggi">🔐 Sicurezza</button>
+    <button class="btn-edit" onclick="logoutDashboard()" title="Salva i dati ed esci dall'account">⏻ Esci</button>
   </div>
 </div>
 
@@ -563,7 +578,7 @@
   </div>
 </div>
 
-<!-- Chiavi API del consulente AI (salvate in ai-config.json, non in dati.json) -->
+<!-- Chiavi API del consulente AI (salvate a parte sul server, non nei dati della dashboard) -->
 <div class="card chat-card">
   <div class="chat-header" style="cursor:pointer;" onclick="toggleApiKeysCollapse()">
     <div class="section-title">🔑 Chiavi API <span id="apiKeysCollapseChevron" style="font-size:10px;color:var(--text-muted);">▾</span></div>
@@ -573,7 +588,7 @@
   </div>
   <div id="apiKeysBodyWrap">
     <div id="apiKeysList"></div>
-    <div class="chat-attach-note" style="margin-top:8px;">Il consulente usa solo la chiave "in uso". Le chiavi sono salvate in ai-config.json sul tuo computer (escluso da git e separato da dati.json, quindi mai negli export o nei backup); il valore non viene mai rimostrato, solo le ultime 4 cifre.</div>
+    <div class="chat-attach-note" style="margin-top:8px;">Il consulente usa solo la chiave "in uso". Le chiavi sono salvate sul server, associate al tuo account e separate dai dati della dashboard (quindi mai negli export o nei backup); il valore non viene mai rimostrato, solo le ultime 4 cifre.</div>
   </div>
 </div>
 
@@ -1195,6 +1210,364 @@
 </div>
 
 <script>
+  // ===== Accesso =====
+  // Prima di tutto si chiede al server se c'è una sessione valida (cookie
+  // HttpOnly: la pagina non vede mai il token, solo il token CSRF). Se manca,
+  // si mostra la schermata di accesso (login, registrazione, secondo fattore,
+  // password dimenticata, link ricevuti per email) e lo script principale non
+  // parte (vedi window.__authRequired); dopo l'accesso la pagina si ricarica.
+  window.__authRequired = false;
+  window.__csrf = '';
+  window.__userEmail = '';
+  window.__mfaEnabled = false;
+
+  function authMe() {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', '/api/auth/me', false);
+    xhr.send(null);
+    if (xhr.status !== 200) throw new Error('HTTP ' + xhr.status);
+    return JSON.parse(xhr.responseText);
+  }
+
+  // Dopo un 403 (token CSRF scaduto perché l'utente ha riaccesso in un'altra
+  // scheda): rilegge il token. 'other' = ora è collegato un ALTRO account:
+  // questa pagina non deve più scrivere (i suoi dati sono di un altro utente).
+  window.__refreshSession = function() {
+    try {
+      const me = authMe();
+      if (!me.authenticated) return 'anon';
+      if (window.__userEmail && me.email !== window.__userEmail) return 'other';
+      window.__csrf = me.csrf;
+      return 'ok';
+    } catch { return 'anon'; }
+  };
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init) {
+    init = init || {};
+    const method = (init.method || 'GET').toUpperCase();
+    const unsafe = method !== 'GET' && method !== 'HEAD';
+    function withCsrf() {
+      if (unsafe) init.headers = Object.assign({}, init.headers, { 'X-CSRF-Token': window.__csrf });
+    }
+    withCsrf();
+    let res = await nativeFetch(input, init);
+    if (unsafe && res.status === 403 && window.__refreshSession() === 'ok') {
+      withCsrf();
+      res = await nativeFetch(input, init);
+    }
+    return res;
+  };
+
+  // Piccolo costruttore DOM: niente innerHTML con testo variabile.
+  function h(tag, attrs, kids) {
+    const e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function(k) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k === 'class') e.className = attrs[k];
+      else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), attrs[k]);
+      else e.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function(c) { if (c) e.appendChild(c); });
+    return e;
+  }
+
+  async function postJson(path, body) {
+    const res = await window.fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* risposta non JSON */ }
+    return { ok: res.ok, status: res.status, data: data || {} };
+  }
+
+  function errorText(r) {
+    return r.data.message || ('Errore del server (HTTP ' + r.status + ').');
+  }
+
+  function formField(id, label, type, autocomplete, extra) {
+    const input = h('input', Object.assign({ id: id, type: type, autocomplete: autocomplete }, extra || {}));
+    return { wrap: h('div', {}, [h('label', { for: id, text: label }), input]), input: input };
+  }
+
+  // Mostra il modulo e chiama onSubmit(valori) con il pulsante bloccato; onSubmit
+  // restituisce un messaggio d'errore oppure niente.
+  function formView(box, o) {
+    box.textContent = '';
+    box.appendChild(h('h1', { text: '📊 Dashboard Finanziaria' }));
+    box.appendChild(h('p', { class: 'auth-sub', text: o.subtitle }));
+    const err = h('div', { class: 'auth-error', role: 'alert' });
+    if (o.hint) { err.textContent = o.hint; err.style.color = 'var(--text-muted)'; }
+    const submit = h('button', { type: 'submit', class: 'auth-submit', text: o.submit });
+    const form = h('form', { novalidate: 'novalidate' }, o.fields.map(function(f) { return f.wrap; }).concat([err, submit]));
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      err.style.color = 'var(--red)';
+      err.textContent = '';
+      submit.disabled = true;
+      try {
+        const msg = await o.onSubmit();
+        if (msg) err.textContent = msg;
+      } catch {
+        err.textContent = 'Server non raggiungibile.';
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    box.appendChild(form);
+    (o.links || []).forEach(function(l) { box.appendChild(h('button', { type: 'button', class: 'auth-switch', text: l[0], onclick: l[1] })); box.appendChild(document.createElement('br')); });
+    if (o.fields.length) o.fields[0].input.focus();
+  }
+
+  function buildAuthScreen(me, action) {
+    document.body.textContent = '';
+    const box = h('div', { class: 'auth-box' });
+    document.body.appendChild(box);
+    const canRegister = me.registration !== 'closed';
+
+    function notice(text, linkText) {
+      box.textContent = '';
+      box.appendChild(h('h1', { text: '📊 Dashboard Finanziaria' }));
+      box.appendChild(h('p', { class: 'auth-sub', text: text }));
+      box.appendChild(h('button', { type: 'button', class: 'auth-submit', text: linkText || 'Vai all\'accesso', onclick: function() { location.reload(); } }));
+    }
+
+    function loginView() {
+      const email = formField('authEmail', 'Email', 'email', 'username');
+      const pass = formField('authPassword', 'Password', 'password', 'current-password');
+      const links = [];
+      if (me.email_enabled) links.push(['Password dimenticata?', forgotView]);
+      if (canRegister) links.push(['Non hai un account? Registrati', registerView]);
+      formView(box, {
+        subtitle: 'Accedi al tuo account', submit: 'Accedi', fields: [email, pass], links: links,
+        onSubmit: async function() {
+          const r = await postJson('/api/auth/login', { email: email.input.value, password: pass.input.value });
+          if (r.ok && r.data.status === 'mfa_required') { mfaView(r.data.mfa_token); return; }
+          if (!r.ok || r.data.status !== 'ok') return errorText(r);
+          location.reload();
+        },
+      });
+    }
+
+    function mfaView(token) {
+      const code = formField('authCode', 'Codice dell\'app di autenticazione (o codice di recupero)', 'text', 'one-time-code', { inputmode: 'text', maxlength: '32' });
+      formView(box, {
+        subtitle: 'Verifica in due passaggi', submit: 'Conferma', fields: [code],
+        links: [['Torna all\'accesso', loginView]],
+        onSubmit: async function() {
+          const r = await postJson('/api/auth/login-mfa', { mfa_token: token, code: code.input.value });
+          if (!r.ok || r.data.status !== 'ok') return errorText(r);
+          location.reload();
+        },
+      });
+    }
+
+    function registerView() {
+      const email = formField('authEmail', 'Email', 'email', 'username');
+      const pass = formField('authPassword', 'Password', 'password', 'new-password', { minlength: '12' });
+      const invite = me.registration === 'invite' ? formField('authInvite', 'Codice d\'invito', 'text', 'off') : null;
+      formView(box, {
+        subtitle: 'Crea il tuo account', submit: 'Registrati', hint: 'Password di almeno 12 caratteri.',
+        fields: [email, pass].concat(invite ? [invite] : []),
+        links: [['Hai già un account? Accedi', loginView]],
+        onSubmit: async function() {
+          const body = { email: email.input.value, password: pass.input.value };
+          if (invite) body.invite = invite.input.value;
+          const r = await postJson('/api/auth/register', body);
+          if (r.status === 202) { notice('Ti abbiamo inviato un\'email: apri il link per confermare l\'indirizzo, poi accedi.'); return; }
+          if (!r.ok || r.data.status !== 'ok') return errorText(r);
+          location.reload();
+        },
+      });
+    }
+
+    function forgotView() {
+      const email = formField('authEmail', 'Email', 'email', 'username');
+      formView(box, {
+        subtitle: 'Reimposta la password', submit: 'Invia il link', fields: [email],
+        links: [['Torna all\'accesso', loginView]],
+        onSubmit: async function() {
+          const r = await postJson('/api/auth/forgot', { email: email.input.value });
+          if (!r.ok) return errorText(r);
+          notice('Se l\'indirizzo è registrato, riceverai un\'email con il link per scegliere una nuova password.');
+        },
+      });
+    }
+
+    function resetView(token) {
+      const pass = formField('authPassword', 'Nuova password', 'password', 'new-password', { minlength: '12' });
+      formView(box, {
+        subtitle: 'Scegli una nuova password', submit: 'Salva la password', hint: 'Almeno 12 caratteri.', fields: [pass],
+        onSubmit: async function() {
+          const r = await postJson('/api/auth/reset', { token: token, password: pass.input.value });
+          if (!r.ok) return errorText(r);
+          notice('Password aggiornata. Accedi con la nuova password.');
+        },
+      });
+    }
+
+    function resendView() {
+      const email = formField('authEmail', 'Email', 'email', 'username');
+      formView(box, {
+        subtitle: 'Ricevi un nuovo link di conferma', submit: 'Invia il link', fields: [email],
+        links: [['Torna all\'accesso', loginView]],
+        onSubmit: async function() {
+          const r = await postJson('/api/auth/resend', { email: email.input.value });
+          if (!r.ok) return errorText(r);
+          notice('Se l\'indirizzo è registrato e non ancora confermato, riceverai un nuovo link.');
+        },
+      });
+    }
+
+    async function verifyView(token) {
+      notice('Verifica in corso…', 'Attendi');
+      try {
+        const r = await postJson('/api/auth/verify', { token: token });
+        if (r.ok) { notice('Indirizzo confermato. Ora puoi accedere.'); return; }
+        formView(box, {
+          subtitle: errorText(r), submit: 'Chiedi un nuovo link', fields: [], links: [['Torna all\'accesso', loginView]],
+          onSubmit: function() { resendView(); },
+        });
+      } catch { notice('Server non raggiungibile.', 'Riprova'); }
+    }
+
+    if (action && action.type === 'verify') verifyView(action.token);
+    else if (action && action.type === 'reset') resetView(action.token);
+    else loginView();
+  }
+
+  // ----- Sicurezza dell'account (password e verifica in due passaggi) -----
+  function openSecurityModal() {
+    const overlay = h('div', { class: 'modal-overlay open' });
+    const modal = h('div', { class: 'modal' });
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    function close() { overlay.remove(); }
+    function section(title, kids) {
+      return h('div', { class: 'modal-section' }, [h('div', { class: 'modal-section-title', text: title })].concat(kids));
+    }
+    function status(text, isError) {
+      const e = h('div', { class: 'auth-error', role: 'alert', text: text || '' });
+      e.style.color = isError ? 'var(--red)' : 'var(--green)';
+      return e;
+    }
+    function inputRow(id, label, type, autocomplete, extra) {
+      const f = formField(id, label, type, autocomplete, extra);
+      f.wrap.className = 'sec-field';
+      return f;
+    }
+
+    function draw() {
+      modal.textContent = '';
+      modal.appendChild(h('h2', { text: '🔐 Sicurezza dell\'account' }));
+      modal.appendChild(h('p', { class: 'auth-sub', text: window.__userEmail }));
+
+      // Cambio password
+      const cur = inputRow('secCur', 'Password attuale', 'password', 'current-password');
+      const nw = inputRow('secNew', 'Nuova password (almeno 12 caratteri)', 'password', 'new-password', { minlength: '12' });
+      const pwStatus = status('');
+      const pwBtn = h('button', { type: 'button', class: 'btn-save', text: 'Cambia password', onclick: async function() {
+        pwStatus.textContent = '';
+        const r = await postJson('/api/auth/change-password', { current: cur.input.value, password: nw.input.value });
+        pwStatus.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+        pwStatus.textContent = r.ok ? 'Password cambiata. Le altre sessioni sono state chiuse.' : errorText(r);
+        if (r.ok) { cur.input.value = ''; nw.input.value = ''; }
+      } });
+      modal.appendChild(section('Password', [cur.wrap, nw.wrap, pwStatus, pwBtn]));
+
+      // 2FA
+      const mfaKids = [];
+      const mfaStatus = status('');
+      if (window.__mfaEnabled) {
+        mfaKids.push(h('p', { class: 'auth-sub', text: 'Attiva: all\'accesso ti serve anche il codice dell\'app di autenticazione.' }));
+        const pw = inputRow('secMfaPw', 'Password', 'password', 'current-password');
+        const code = inputRow('secMfaCode', 'Codice dell\'app (o codice di recupero)', 'text', 'one-time-code', { maxlength: '32' });
+        mfaKids.push(pw.wrap, code.wrap, mfaStatus, h('button', { type: 'button', class: 'btn-cancel', text: 'Disattiva la verifica in due passaggi', onclick: async function() {
+          const r = await postJson('/api/auth/mfa/disable', { password: pw.input.value, code: code.input.value });
+          if (!r.ok) { mfaStatus.style.color = 'var(--red)'; mfaStatus.textContent = errorText(r); return; }
+          window.__mfaEnabled = false; draw();
+        } }));
+      } else {
+        mfaKids.push(h('p', { class: 'auth-sub', text: 'Non attiva. Consigliata: protegge i tuoi dati anche se la password viene scoperta.' }));
+        mfaKids.push(mfaStatus, h('button', { type: 'button', class: 'btn-save', text: 'Attiva la verifica in due passaggi', onclick: async function() {
+          const r = await postJson('/api/auth/mfa/setup', {});
+          if (!r.ok) { mfaStatus.style.color = 'var(--red)'; mfaStatus.textContent = errorText(r); return; }
+          drawMfaSetup(r.data);
+        } }));
+      }
+      modal.appendChild(section('Verifica in due passaggi (TOTP)', mfaKids));
+      modal.appendChild(h('div', { class: 'modal-actions' }, [h('button', { type: 'button', class: 'btn-cancel', text: 'Chiudi', onclick: close })]));
+    }
+
+    function drawMfaSetup(setup) {
+      modal.textContent = '';
+      modal.appendChild(h('h2', { text: 'Attiva la verifica in due passaggi' }));
+      modal.appendChild(h('p', { class: 'auth-sub', text: 'Nella tua app di autenticazione (Google Authenticator, Authy, 1Password…) aggiungi un account con inserimento manuale e usa questa chiave (tipo: basato sul tempo):' }));
+      const secret = h('code', { text: setup.secret });
+      secret.style.cssText = 'display:block;padding:10px;background:var(--bg);border-radius:8px;font-size:15px;letter-spacing:1px;word-break:break-all;user-select:all;margin-bottom:12px;';
+      modal.appendChild(secret);
+      const code = inputRow('secEnableCode', 'Codice a 6 cifre mostrato dall\'app', 'text', 'one-time-code', { inputmode: 'numeric', maxlength: '8' });
+      const st = status('', true);
+      modal.appendChild(code.wrap);
+      modal.appendChild(st);
+      modal.appendChild(h('div', { class: 'modal-actions' }, [
+        h('button', { type: 'button', class: 'btn-cancel', text: 'Annulla', onclick: draw }),
+        h('button', { type: 'button', class: 'btn-save', text: 'Attiva', onclick: async function() {
+          const r = await postJson('/api/auth/mfa/enable', { code: code.input.value });
+          if (!r.ok) { st.textContent = errorText(r); return; }
+          window.__mfaEnabled = true;
+          drawRecovery(r.data.recovery_codes);
+        } }),
+      ]));
+    }
+
+    function drawRecovery(codes) {
+      modal.textContent = '';
+      modal.appendChild(h('h2', { text: 'Codici di recupero' }));
+      modal.appendChild(h('p', { class: 'auth-sub', text: 'Salvali ora in un posto sicuro: non verranno mostrati di nuovo. Ognuno vale una sola volta se perdi l\'app di autenticazione.' }));
+      const list = h('pre', { text: codes.join('\n') });
+      list.style.cssText = 'padding:12px;background:var(--bg);border-radius:8px;font-size:15px;user-select:all;';
+      modal.appendChild(list);
+      modal.appendChild(h('div', { class: 'modal-actions' }, [h('button', { type: 'button', class: 'btn-save', text: 'Li ho salvati', onclick: draw })]));
+    }
+
+    draw();
+  }
+
+  (function() {
+    // I link ricevuti per email portano il token nel fragment: lo si legge e lo si
+    // toglie subito dall'indirizzo.
+    let action = null;
+    const m = /^#(verify|reset)=([A-Za-z0-9_-]{20,100})$/.exec(location.hash);
+    if (m) {
+      action = { type: m[1], token: m[2] };
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    let me;
+    try { me = authMe(); } catch (err) {
+      window.__authRequired = true;
+      document.body.textContent = '';
+      document.body.appendChild(h('div', { class: 'auth-box' }, [
+        h('h1', { text: 'Dashboard non disponibile' }),
+        h('p', { class: 'auth-sub', text: 'Non riesco a contattare il server (' + err.message + '). Riprova tra poco.' }),
+      ]));
+      return;
+    }
+    if (!me.authenticated || action) {
+      window.__authRequired = true;
+      buildAuthScreen(me, action);
+      return;
+    }
+    window.__csrf = me.csrf;
+    window.__userEmail = me.email;
+    window.__mfaEnabled = !!me.mfa_enabled;
+  })();
+</script>
+
+<script>
+  if (window.__authRequired) { throw new Error('Accesso richiesto: la dashboard parte dopo il login.'); }
   // ===== Archivio dati: dati.json è l'unica fonte di verità =====
   // Tutti i dati (conti, movimenti, investimenti, chat, memoria e anche le
   // preferenze come tema e sezioni compresse) vivono SOLO in dati.json, letto e
@@ -1226,16 +1599,39 @@
     let failureAlerted = false;
     let retryTimer = null;
 
-    function request(method, body) {
+    function send(method, body) {
       const xhr = new XMLHttpRequest();
       xhr.open(method, DATA_API, false); // sincrona: vedi commento sopra
       if (body !== undefined) {
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.setRequestHeader('If-Match', version || '');
+        xhr.setRequestHeader('X-CSRF-Token', window.__csrf);
       }
       xhr.send(body === undefined ? null : body);
+      return xhr;
+    }
+
+    function request(method, body) {
+      let xhr = send(method, body);
+      // 403 = token CSRF vecchio (nuovo accesso in un'altra scheda): lo si
+      // rilegge, a meno che nel frattempo sia entrato un ALTRO utente.
+      if (xhr.status === 403 && body !== undefined) {
+        const state = window.__refreshSession();
+        if (state === 'other') {
+          const err = new Error('account cambiato');
+          err.conflict = true;
+          err.otherAccount = true;
+          throw err;
+        }
+        if (state === 'ok') xhr = send(method, body);
+      }
+      if (xhr.status === 401) {
+        const err = new Error('sessione scaduta');
+        err.sessionExpired = true;
+        throw err;
+      }
       if (xhr.status === 409) {
-        const err = new Error('dati.json modificato altrove');
+        const err = new Error('dati modificati altrove');
         err.conflict = true;
         throw err;
       }
@@ -1267,19 +1663,23 @@
         if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
       } catch (err) {
         window.__fileSyncOk = false;
-        console.warn('Salvataggio su dati.json non riuscito:', err.message);
+        console.warn('Salvataggio non riuscito:', err.message);
         if (err.conflict) {
           conflict = true;
           window.__dataConflict = true;
           if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
           updateSyncIndicator();
-          alert('ATTENZIONE: dati.json è stato modificato da un\'altra scheda o finestra della dashboard, quindi questa pagina ha dati non aggiornati e NON salva più, per non sovrascrivere quelle modifiche.\n\nRicarica la pagina per vedere i dati attuali. L\'ultima modifica fatta qui non è stata salvata: dopo aver ricaricato, rifalla se serve.');
+          alert(err.otherAccount
+            ? 'ATTENZIONE: in un\'altra scheda è stato effettuato l\'accesso con un ALTRO account, quindi questa pagina NON salva più. Ricarica la pagina.'
+            : 'ATTENZIONE: i dati sono stati modificati da un\'altra scheda o finestra della dashboard, quindi questa pagina ha dati non aggiornati e NON salva più, per non sovrascrivere quelle modifiche.\n\nRicarica la pagina per vedere i dati attuali. L\'ultima modifica fatta qui non è stata salvata: dopo aver ricaricato, rifalla se serve.');
           return false;
         }
         if (!retryTimer) retryTimer = setInterval(persist, SAVE_RETRY_MS);
         if (!failureAlerted) {
           failureAlerted = true;
-          alert('ATTENZIONE: la modifica NON è stata salvata in dati.json (server.py non raggiungibile?).\n\nRiavvia server.py: la pagina riprova da sola ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi e salva tutto appena ci riesce. Non chiudere né ricaricare questa pagina prima, altrimenti le modifiche non salvate vanno perse.');
+          alert(err.sessionExpired
+            ? 'ATTENZIONE: la sessione è scaduta e la modifica NON è stata salvata.\n\nApri la dashboard in un\'altra scheda e accedi di nuovo: questa pagina riprova da sola ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi e salva tutto appena l\'accesso è tornato valido. Non chiudere né ricaricare questa pagina prima, altrimenti le modifiche non salvate vanno perse.'
+            : 'ATTENZIONE: la modifica NON è stata salvata (server non raggiungibile?).\n\nLa pagina riprova da sola ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi e salva tutto appena ci riesce. Non chiudere né ricaricare questa pagina prima, altrimenti le modifiche non salvate vanno perse.');
         }
       }
       updateSyncIndicator();
@@ -1307,8 +1707,8 @@
     title.style.cssText = 'font-size:20px;margin-bottom:12px;';
     title.textContent = 'Dashboard non disponibile';
     const text = document.createElement('p');
-    text.textContent = 'Non riesco a leggere dati.json da server.py (' + detail + '). ' +
-      'Avvia la dashboard con avvia-dashboard.command e aprila da http://localhost:8765/.';
+    text.textContent = 'Non riesco a leggere i tuoi dati dal server (' + detail + '). ' +
+      'Riprova tra poco; se l\'errore resta, esci e accedi di nuovo.';
     box.appendChild(title);
     box.appendChild(text);
     document.body.innerHTML = '';
@@ -1352,6 +1752,10 @@
     throw new Error('dati.json non raggiungibile: avvio della dashboard interrotto.');
   }
   migrateLegacyBrowserStorage();
+  (function() {
+    const el = document.getElementById('userEmailDisplay');
+    if (el) el.textContent = window.__userEmail;
+  })();
 
   // Se c'è una modifica non ancora arrivata su dati.json, il browser chiede
   // conferma prima di chiudere o ricaricare la pagina.
@@ -1364,33 +1768,26 @@
     }
   });
 
-  // Chiusura ordinata: un ultimo salvataggio completo su dati.json (sincrono),
-  // poi si chiede a server.py di fermarsi.
-  async function shutdownDashboard() {
-    if (!confirm('Chiudere la dashboard? I dati vengono salvati in dati.json e il server locale si ferma: per riaprirla servirà di nuovo avvia-dashboard.command.')) return;
-
+  // Uscita: un ultimo salvataggio completo (sincrono), poi si chiude la
+  // sessione sul server e si torna alla schermata di accesso.
+  async function logoutDashboard() {
     const saved = store.persist();
-    if (!saved && !confirm('ATTENZIONE: il salvataggio su dati.json NON è riuscito (server.py non raggiungibile?). Le modifiche non ancora salvate andranno perse. Chiudere comunque?')) return;
+    if (!saved && !confirm('ATTENZIONE: il salvataggio NON è riuscito (server non raggiungibile?). Le modifiche non ancora salvate andranno perse. Uscire comunque?')) return;
 
     try {
-      const res = await fetch('/api/shutdown', {
+      const res = await fetch('/api/auth/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok && res.status !== 401) throw new Error('HTTP ' + res.status);
     } catch (err) {
-      alert('Non sono riuscito a fermare il server (' + err.message + '). Se è già chiuso non serve fare altro; altrimenti chiudi la finestra del Terminale.');
+      alert('Non sono riuscito a chiudere la sessione (' + err.message + '). Riprova.');
       return;
     }
 
     window.__dashboardClosed = true;
-    document.body.innerHTML =
-      '<div style="max-width:480px;margin:80px auto;text-align:center;">' +
-      '<h1 style="font-size:20px;margin-bottom:12px;">Dashboard chiusa</h1>' +
-      '<p style="color:var(--text-secondary);">' +
-      (saved ? 'I dati sono stati salvati in dati.json.' : 'Attenzione: l\'ultimo salvataggio su dati.json non è riuscito.') +
-      ' Il server locale è stato fermato: puoi chiudere questa scheda.<br>Per riaprire la dashboard, fai doppio click su avvia-dashboard.command.</p></div>';
+    location.reload();
   }
 
   // ===== Importazione estratti conto (Revolut, BPER, Fineco) =====
@@ -1660,7 +2057,7 @@
       });
       let data = null;
       try { data = await res.json(); } catch { /* risposta non JSON: server vecchio */ }
-      if (res.status === 404) throw new Error('il server in esecuzione è di una versione precedente e non gestisce l\'importazione. Premi "⏻ Chiudi dashboard" e riavviala con avvia-dashboard.command.');
+      if (res.status === 404) throw new Error('il server è di una versione precedente e non gestisce l\'importazione: chiedi di aggiornarlo e riavviarlo.');
       if (!res.ok || !data || data.status !== 'ok') throw new Error((data && data.message) || ('HTTP ' + res.status));
 
       const rec = reconcileStatement(data);
@@ -1901,15 +2298,15 @@
     if (window.__dataConflict) {
       el.textContent = '⚠️ Dati non aggiornati: ricarica la pagina';
       el.style.color = 'var(--red)';
-      el.title = 'dati.json è stato modificato da un\'altra scheda o finestra: questa pagina non salva più finché non la ricarichi.';
+      el.title = 'I dati sono stati modificati da un\'altra scheda o finestra (o è cambiato l\'account): questa pagina non salva più finché non la ricarichi.';
     } else if (window.__fileSyncOk) {
-      el.textContent = '💾 Salvato in dati.json';
+      el.textContent = '💾 Salvato';
       el.style.color = 'var(--green)';
-      el.title = 'Ogni modifica viene scritta subito in dati.json.';
+      el.title = 'Ogni modifica viene salvata subito sul server, nel tuo account.';
     } else {
       el.textContent = '⚠️ Modifiche NON salvate';
       el.style.color = 'var(--red)';
-      el.title = 'L\'ultimo salvataggio su dati.json non è riuscito (server.py non raggiungibile). Nuovo tentativo automatico ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi: non chiudere né ricaricare la pagina.';
+      el.title = 'L\'ultimo salvataggio non è riuscito (server non raggiungibile o sessione scaduta). Nuovo tentativo automatico ogni ' + (SAVE_RETRY_MS / 1000) + ' secondi: non chiudere né ricaricare la pagina.';
     }
   }
 
@@ -5205,7 +5602,7 @@
         ? info.label + ' (' + info.model + ', chiave "' + info.key_name + '")'
         : 'non attivo — ' + info.problem;
     } catch {
-      advisorModelLabel = 'non disponibile (server.py non raggiungibile)';
+      advisorModelLabel = 'non disponibile (server non raggiungibile)';
     }
     renderChat();
   }
@@ -5426,7 +5823,7 @@
 
   // Messaggio per un server avviato prima dell'aggiunta delle chiavi API:
   // la pagina (sempre riletta dal disco) è nuova, il processo server.py no.
-  const OUTDATED_SERVER_MESSAGE = 'il server della dashboard in esecuzione è di una versione precedente e non gestisce le chiavi API. Premi "⏻ Chiudi dashboard" e riavviala con avvia-dashboard.command.';
+  const OUTDATED_SERVER_MESSAGE = 'il server della dashboard è di una versione precedente e non gestisce le chiavi API: chiedi di aggiornarlo e riavviarlo.';
   let apiKeysLoadError = null;
 
   async function apiKeysRequest(body) {
@@ -5438,7 +5835,7 @@
         body: JSON.stringify(body),
       } : undefined);
     } catch {
-      throw new Error('server.py non raggiungibile.');
+      throw new Error('server non raggiungibile.');
     }
     let data = null;
     try { data = await res.json(); } catch { /* risposta non JSON */ }
@@ -5663,7 +6060,7 @@
         body: JSON.stringify({ prompt: prompt }),
       });
     } catch {
-      throw new Error('server.py non raggiungibile: avvialo (avvia-dashboard.command) e apri la dashboard da http://localhost:8765/');
+      throw new Error('server non raggiungibile: riprova tra poco.');
     }
     let body = null;
     try { body = await res.json(); } catch { /* risposta non JSON */ }

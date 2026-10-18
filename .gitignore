@@ -4,9 +4,17 @@ dati.json.tmp
 ai-config.json
 ai-config.json.tmp
 
+# Database multi-utente (account, sessioni, dati e chiavi API di tutti gli utenti)
+app.db
+app.db-wal
+app.db-shm
+
 __pycache__/
 .venv/
 .DS_Store
 
 # Estratti conto reali (IBAN, nomi, movimenti): mai nel repository
 esempi-estratti/
+
+# Impostazioni locali con la chiave maestra
+.env
