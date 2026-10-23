@@ -72,6 +72,27 @@
     }
     .header h1 { font-size: 20px; font-weight: 700; }
     .header-meta { font-size: 12px; color: var(--text-muted); }
+    .menubar { display: flex; align-items: center; gap: 4px; margin-left: 24px; margin-right: auto; }
+    .menu-wrap { position: relative; }
+    .menu-btn {
+      background: transparent; border: 1px solid transparent; border-radius: 8px;
+      padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+      color: var(--text-primary); font-family: inherit;
+    }
+    .menu-btn:hover, .menu-btn[aria-expanded="true"] { background: var(--surface); border-color: var(--border); }
+    .menu-dropdown {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 90;
+      min-width: 230px; padding: 6px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--modal-shadow);
+    }
+    .menu-dropdown.open { display: block; }
+    .menu-item {
+      display: block; width: 100%; text-align: left; background: transparent; border: 0;
+      border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer;
+      color: var(--text-primary); font-family: inherit;
+    }
+    .menu-item:hover, .menu-item:focus-visible { background: var(--bg); outline: none; }
+    .menu-sep { height: 1px; background: var(--border); margin: 6px 4px; }
     .card {
       background: var(--surface);
       border-radius: var(--radius);
@@ -503,17 +524,27 @@
 
 <div class="header">
   <h1>📊 Dashboard Finanziaria</h1>
+  <nav class="menubar" aria-label="Menu principale">
+    <div class="menu-wrap">
+      <button class="menu-btn" id="settingsMenuBtn" aria-haspopup="true" aria-expanded="false" onclick="toggleSettingsMenu(event)">⚙️ Impostazioni ▾</button>
+      <div class="menu-dropdown" id="settingsMenu" role="menu" onclick="closeSettingsMenu()">
+        <input type="file" id="importFileInput" accept=".csv" style="display:none;" onchange="handleImportFileSelect(event)">
+        <button class="menu-item" role="menuitem" onclick="document.getElementById('importFileInput').click()" title="Importa un file di backup generato da questa dashboard">📤 Importa backup</button>
+        <button class="menu-item" role="menuitem" onclick="openStatementModal()" title="Carica l'estratto conto di Revolut, BPER o Fineco">📑 Importa estratto conto</button>
+        <button class="menu-item" role="menuitem" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
+        <button class="menu-item" role="menuitem" onclick="openModal()">✏️ Aggiorna dati</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" role="menuitem" onclick="openApiKeysModal()" title="Chiavi API del consulente AI">🔑 Chiavi API</button>
+        <button class="menu-item" role="menuitem" onclick="openSecurityModal()" title="Password e verifica in due passaggi">🔐 Sicurezza</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" role="menuitem" id="themeToggleBtn" onclick="toggleTheme()" title="Cambia tema chiaro/scuro">🌙 Tema scuro</button>
+      </div>
+    </div>
+  </nav>
   <div style="display:flex;align-items:center;gap:10px;">
     <span class="header-meta" id="fileSyncStatus" style="font-size:11px;font-weight:600;"></span>
     <span class="header-meta" id="lastUpdatedDisplay"></span>
-    <button class="btn-icon-header" id="themeToggleBtn" onclick="toggleTheme()" title="Cambia tema chiaro/scuro">🌙</button>
-    <input type="file" id="importFileInput" accept=".csv" style="display:none;" onchange="handleImportFileSelect(event)">
-    <button class="btn-edit" onclick="document.getElementById('importFileInput').click()" title="Importa un file di backup generato da questa dashboard">📤 Importa backup</button>
-    <button class="btn-edit" onclick="openStatementModal()" title="Carica l'estratto conto di Revolut, BPER o Fineco">📑 Importa estratto conto</button>
-    <button class="btn-edit" onclick="openExportChoiceModal()" title="Esporta i dati come report leggibile o come backup reimportabile">📥 Esporta dati</button>
-    <button class="btn-edit" onclick="openModal()">✏️ Aggiorna dati</button>
     <span class="header-meta" id="userEmailDisplay" style="font-size:11px;"></span>
-    <button class="btn-edit" onclick="openSecurityModal()" title="Password e verifica in due passaggi">🔐 Sicurezza</button>
     <button class="btn-edit" onclick="logoutDashboard()" title="Salva i dati ed esci dall'account">⏻ Esci</button>
   </div>
 </div>
@@ -575,20 +606,6 @@
         <button class="btn-save" onclick="saveMemoryEdit()">Salva</button>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- Chiavi API del consulente AI (salvate a parte sul server, non nei dati della dashboard) -->
-<div class="card chat-card">
-  <div class="chat-header" style="cursor:pointer;" onclick="toggleApiKeysCollapse()">
-    <div class="section-title">🔑 Chiavi API <span id="apiKeysCollapseChevron" style="font-size:10px;color:var(--text-muted);">▾</span></div>
-    <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-      <button class="btn-icon-header" onclick="openApiKeyModal()" title="Aggiungi chiave API">+</button>
-    </div>
-  </div>
-  <div id="apiKeysBodyWrap">
-    <div id="apiKeysList"></div>
-    <div class="chat-attach-note" style="margin-top:8px;">Il consulente usa solo la chiave "in uso". Le chiavi sono salvate sul server, associate al tuo account e separate dai dati della dashboard (quindi mai negli export o nei backup); il valore non viene mai rimostrato, solo le ultime 4 cifre.</div>
   </div>
 </div>
 
@@ -1130,6 +1147,21 @@
     <div id="flowsList"></div>
   </div>
   <div class="note" id="pensionNote"></div>
+</div>
+
+<!-- Elenco chiavi API (aperto da Impostazioni; salvate a parte sul server, non nei dati della dashboard) -->
+<div class="modal-overlay" id="apiKeysModalOverlay">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;">🔑 Chiavi API</h2>
+      <button class="btn-icon-header" onclick="openApiKeyModal()" title="Aggiungi chiave API">+</button>
+    </div>
+    <div id="apiKeysList"></div>
+    <div class="chat-attach-note" style="margin-top:8px;">Il consulente usa solo la chiave "in uso". Le chiavi sono salvate sul server, associate al tuo account e separate dai dati della dashboard (quindi mai negli export o nei backup); il valore non viene mai rimostrato, solo le ultime 4 cifre.</div>
+    <div style="margin-top:16px;text-align:right;">
+      <button class="btn-cancel" onclick="closeApiKeysModal()">Chiudi</button>
+    </div>
+  </div>
 </div>
 
 <!-- Add/Edit API Key Modal -->
@@ -2331,7 +2363,7 @@
     document.documentElement.setAttribute('data-theme', theme);
     try { store.setItem(THEME_STORAGE_KEY, theme); } catch {}
     const btn = document.getElementById('themeToggleBtn');
-    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+    if (btn) btn.textContent = theme === 'dark' ? '☀️ Tema chiaro' : '🌙 Tema scuro';
     updateChartDefaultsForTheme(theme);
   }
 
@@ -5816,7 +5848,6 @@
   // scadenza, note e le ultime 4 cifre. Il valore completo esce dalla pagina
   // solo quando lo si digita nel modal, e non vi rientra mai.
   const AI_KEYS_API = '/api/ai-keys';
-  const API_KEYS_COLLAPSE_KEY = 'skender_fin_api_keys_collapsed_v1';
   let apiKeysState = { keys: [], providers: [] };
   let editingApiKeyId = null;
   let apiKeyProviderTouched = false;
@@ -6029,21 +6060,35 @@
     loadAdvisorInfo();
   }
 
-  function loadApiKeysCollapsed() {
-    const saved = store.getItem(API_KEYS_COLLAPSE_KEY);
-    return saved === 'true'; // default: aperta
+  function openApiKeysModal() {
+    document.getElementById('apiKeysModalOverlay').classList.add('open');
   }
 
-  function applyApiKeysCollapse(collapsed) {
-    document.getElementById('apiKeysBodyWrap').style.display = collapsed ? 'none' : 'block';
-    document.getElementById('apiKeysCollapseChevron').textContent = collapsed ? '▸' : '▾';
+  function closeApiKeysModal() {
+    document.getElementById('apiKeysModalOverlay').classList.remove('open');
   }
 
-  function toggleApiKeysCollapse() {
-    const collapsed = !loadApiKeysCollapsed();
-    store.setItem(API_KEYS_COLLAPSE_KEY, String(collapsed));
-    applyApiKeysCollapse(collapsed);
+  // ----- Menu "Impostazioni" -----
+  function closeSettingsMenu() {
+    document.getElementById('settingsMenu').classList.remove('open');
+    document.getElementById('settingsMenuBtn').setAttribute('aria-expanded', 'false');
   }
+
+  function toggleSettingsMenu(ev) {
+    ev.stopPropagation();
+    const menu = document.getElementById('settingsMenu');
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    document.getElementById('settingsMenuBtn').setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector('.menu-item').focus();
+  }
+
+  document.addEventListener('click', function (ev) {
+    if (!ev.target.closest('.menu-wrap')) closeSettingsMenu();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') closeSettingsMenu();
+  });
 
   // Il consulente AI passa da server.py, che inoltra il prompt al fornitore AI
   // della chiave in uso (Anthropic, OpenAI, Gemini — endpoint /api/ask).
@@ -6360,7 +6405,6 @@
   applyMortgageCollapse(loadMortgageCollapsed());
   applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
   updateSyncIndicator();
-  applyApiKeysCollapse(loadApiKeysCollapsed());
   loadApiKeys();
   loadAdvisorInfo();
 </script>
