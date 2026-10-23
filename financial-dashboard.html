@@ -535,6 +535,7 @@
         <button class="menu-item" role="menuitem" onclick="openModal()">✏️ Aggiorna dati</button>
         <div class="menu-sep"></div>
         <button class="menu-item" role="menuitem" onclick="openApiKeysModal()" title="Chiavi API del consulente AI">🔑 Chiavi API</button>
+        <button class="menu-item" role="menuitem" onclick="openMemoryModal()" title="Note a lungo termine usate dal consulente AI">🧠 Memoria del consulente</button>
         <button class="menu-item" role="menuitem" onclick="openSecurityModal()" title="Password e verifica in due passaggi">🔐 Sicurezza</button>
         <div class="menu-sep"></div>
         <button class="menu-item" role="menuitem" id="themeToggleBtn" onclick="toggleTheme()" title="Cambia tema chiaro/scuro">🌙 Tema scuro</button>
@@ -579,33 +580,6 @@
   <div class="card review-card">
     <div class="section-title">🔍 Review qualitativa</div>
     <div id="reviewContent"></div>
-  </div>
-</div>
-
-<!-- Memoria del consulente (collassabile, chiusa di default) -->
-<div class="card chat-card">
-  <div class="chat-header" style="cursor:pointer;" onclick="toggleMemoryCollapse()">
-    <div class="section-title">🧠 Memoria del consulente <span id="memoryCollapseChevron" style="font-size:10px;color:var(--text-muted);">▸</span></div>
-    <div style="display:flex;gap:12px;" onclick="event.stopPropagation()">
-      <button class="btn-clear-chat" onclick="toggleFixedRules()" id="fixedRulesToggleBtn">Regole fisse</button>
-      <button class="btn-clear-chat" onclick="toggleMemoryEditor()" id="memoryEditToggleBtn">Modifica</button>
-    </div>
-  </div>
-  <div id="memoryBodyWrap" style="display:none;">
-    <div id="fixedRulesWrap" style="display:none;margin-bottom:10px;">
-      <div class="chat-context-note" style="white-space:pre-wrap;font-family:var(--font-mono, monospace);">
-        Regole operative fisse (sempre incluse in ogni domanda al consulente, in inglese, NON modificabili né toccate dalla compressione automatica della memoria):
-      </div>
-      <div class="chat-context-note" id="fixedRulesText" style="white-space:pre-wrap;"></div>
-    </div>
-    <div class="chat-context-note" id="memoryDisplay"></div>
-    <div id="memoryEditorWrap" style="display:none;">
-      <textarea id="memoryEditorTextarea" class="chat-input" style="width:100%;min-height:120px;resize:vertical;"></textarea>
-      <div class="modal-actions" style="margin-top:8px;">
-        <button class="btn-cancel" onclick="cancelMemoryEdit()">Annulla</button>
-        <button class="btn-save" onclick="saveMemoryEdit()">Salva</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -1147,6 +1121,36 @@
     <div id="flowsList"></div>
   </div>
   <div class="note" id="pensionNote"></div>
+</div>
+
+<!-- Memoria del consulente (aperta da Impostazioni) -->
+<div class="modal-overlay" id="memoryModalOverlay">
+  <div class="modal" style="width:620px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;">
+      <h2 style="margin:0;">🧠 Memoria del consulente</h2>
+      <div style="display:flex;gap:12px;">
+        <button class="btn-clear-chat" onclick="toggleFixedRules()" id="fixedRulesToggleBtn">Regole fisse</button>
+        <button class="btn-clear-chat" onclick="toggleMemoryEditor()" id="memoryEditToggleBtn">Modifica</button>
+      </div>
+    </div>
+    <div id="fixedRulesWrap" style="display:none;margin-bottom:10px;">
+      <div class="chat-context-note" style="white-space:pre-wrap;font-family:var(--font-mono, monospace);">
+        Regole operative fisse (sempre incluse in ogni domanda al consulente, in inglese, NON modificabili né toccate dalla compressione automatica della memoria):
+      </div>
+      <div class="chat-context-note" id="fixedRulesText" style="white-space:pre-wrap;"></div>
+    </div>
+    <div class="chat-context-note" id="memoryDisplay"></div>
+    <div id="memoryEditorWrap" style="display:none;">
+      <textarea id="memoryEditorTextarea" class="chat-input" style="width:100%;min-height:120px;resize:vertical;"></textarea>
+      <div class="modal-actions" style="margin-top:8px;">
+        <button class="btn-cancel" onclick="cancelMemoryEdit()">Annulla</button>
+        <button class="btn-save" onclick="saveMemoryEdit()">Salva</button>
+      </div>
+    </div>
+    <div style="margin-top:16px;text-align:right;">
+      <button class="btn-cancel" onclick="closeMemoryModal()">Chiudi</button>
+    </div>
+  </div>
 </div>
 
 <!-- Elenco chiavi API (aperto da Impostazioni; salvate a parte sul server, non nei dati della dashboard) -->
@@ -2394,7 +2398,7 @@
   // nota di memoria comprimibile qui sotto (advisorMemory) — non viene mai
   // riassunto, tradotto o alterato dal ciclo di aggiornamento automatico della
   // memoria, proprio per garantire che le regole restino sempre affidabili e
-  // testuali. Visibile in sola lettura nella card "🧠 Memoria del consulente".
+  // testuali. Visibile in sola lettura nella finestra "🧠 Memoria del consulente".
   const ADVISOR_SYSTEM_PROMPT = [
     'You are a senior financial advisor specialized in personal real estate investment and market portfolios, operating under Italian tax/regulatory context unless I state otherwise.',
     '',
@@ -2417,7 +2421,7 @@
   // conversazione", PRIMA che la cronologia venga svuotata, e viene sempre inclusa
   // nel prompt del consulente indipendentemente dalla cronologia recente — così
   // sopravvive a qualunque cancellazione. Visibile e modificabile a mano dalla
-  // card "🧠 Memoria del consulente".
+  // finestra "🧠 Memoria del consulente".
   const MEMORY_STORAGE_KEY = 'skender_fin_memory_v1';
   const MEMORY_MAX_CHARS = 2000;
 
@@ -5730,7 +5734,7 @@
     const el = document.getElementById('memoryDisplay');
     const count = advisorMemory.length;
     if (!advisorMemory.trim()) {
-      el.innerHTML = '<em>Nessuna nota salvata ancora. Si aggiorna automaticamente quando premi "Cancella conversazione" nella chat sotto, oppure modificala qui a mano.</em>';
+      el.innerHTML = '<em>Nessuna nota salvata ancora. Si aggiorna automaticamente quando premi "Cancella conversazione" nella chat, oppure modificala qui a mano.</em>';
     } else {
       el.innerHTML = '<div style="white-space:pre-wrap;">' + escapeHtml(advisorMemory) + '</div>' +
         '<div style="margin-top:6px;font-size:10px;color:var(--text-muted);">' + count.toLocaleString('it-IT') + ' / ' + MEMORY_MAX_CHARS.toLocaleString('it-IT') + ' caratteri</div>';
@@ -5740,35 +5744,17 @@
   // Mostra/nasconde il blocco fisso di persona/regole (ADVISOR_SYSTEM_PROMPT) in
   // sola lettura, per trasparenza — non è editabile da qui, a differenza della
   // nota libera qui sotto.
-  // Sezione "Memoria del consulente": collassabile, chiusa di default (anche al
-  // primo utilizzo). Lo stato aperto/chiuso scelto dall'utente viene ricordato
-  // tra una sessione e l'altra in dati.json, come il tema.
-  const MEMORY_COLLAPSE_KEY = 'skender_fin_memory_collapsed_v1';
-
-  function loadMemoryCollapsed() {
-    try {
-      const saved = store.getItem(MEMORY_COLLAPSE_KEY);
-      if (saved === 'true' || saved === 'false') return saved === 'true';
-    } catch {}
-    return true; // default: chiusa
+  function openMemoryModal() {
+    renderMemory();
+    document.getElementById('memoryModalOverlay').classList.add('open');
   }
 
-  function applyMemoryCollapse(collapsed) {
-    const wrap = document.getElementById('memoryBodyWrap');
-    const chevron = document.getElementById('memoryCollapseChevron');
-    if (wrap) wrap.style.display = collapsed ? 'none' : 'block';
-    if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
-    try { store.setItem(MEMORY_COLLAPSE_KEY, String(collapsed)); } catch {}
-  }
-
-  function toggleMemoryCollapse() {
-    const wrap = document.getElementById('memoryBodyWrap');
-    const isCollapsed = !wrap || wrap.style.display === 'none';
-    applyMemoryCollapse(!isCollapsed);
+  function closeMemoryModal() {
+    document.getElementById('memoryModalOverlay').classList.remove('open');
+    document.getElementById('memoryEditorWrap').style.display = 'none';
   }
 
   function toggleFixedRules() {
-    applyMemoryCollapse(false); // espande la sezione se era chiusa, altrimenti resta visibile
     const wrap = document.getElementById('fixedRulesWrap');
     const isOpen = wrap.style.display !== 'none';
     if (isOpen) {
@@ -5780,7 +5766,6 @@
   }
 
   function toggleMemoryEditor() {
-    applyMemoryCollapse(false); // espande la sezione se era chiusa, altrimenti resta visibile
     const wrap = document.getElementById('memoryEditorWrap');
     const isOpen = wrap.style.display !== 'none';
     if (isOpen) {
@@ -6401,7 +6386,6 @@
   renderAnnualAnalysis();
   renderTransfers();
   renderMemory();
-  applyMemoryCollapse(loadMemoryCollapsed());
   applyMortgageCollapse(loadMortgageCollapsed());
   applyFlowsDetailCollapse(loadFlowsDetailCollapsed());
   updateSyncIndicator();
