@@ -6,7 +6,7 @@ Statuses: `OPEN` | `READY FOR DEV` | `IN PROGRESS` | `BLOCKED` | `NEEDS HUMAN` |
 
 ## ITEM-000 — Test harness
 
-- **Status:** OPEN
+- **Status:** DONE
 - **Why:** the project has no test suite, but the development workflow requires unit and acceptance tests at every stage. No other item can reach `READY FOR DEV` until this one is `DONE`.
 - **Goal:** a repeatable way to run automated tests without touching real data.
 - **Scope (to be refined by the Functional and Technical Lead agents):**
