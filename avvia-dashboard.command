@@ -6,6 +6,14 @@
 # la cartella da cui viene lanciato (doppio click, Finder, ecc.).
 cd "$(dirname "$0")"
 
+# Carica le impostazioni da .env (come fa run.sh), in particolare la
+# DASHBOARD_MASTER_KEY: senza, le chiavi API cifrate non si possono leggere.
+if [ -f ".env" ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 echo "Avvio la Dashboard Finanziaria..."
 echo "(questa finestra deve restare aperta finché usi la dashboard)"
 echo ""
