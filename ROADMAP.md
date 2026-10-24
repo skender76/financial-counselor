@@ -21,7 +21,7 @@ Statuses: `OPEN` | `READY FOR DEV` | `IN PROGRESS` | `BLOCKED` | `NEEDS HUMAN` |
 
 ## ITEM-001 — Development Sandbox
 
-- **Status:** OPEN
+- **Status:** DONE
 - **Why:** the project handles real financial data and secrets, and the development agents run commands on the owner's machine. Today nothing technically stops an agent from reading or changing them; `AGENTS.md` only forbids it in writing.
 - **Goal:** the whole development loop (agents, tests, local server) runs in a sandbox that cannot reach the owner's real data and secrets.
 - **Scope (to be refined by the Functional and Technical Lead agents):**
