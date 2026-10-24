@@ -12,6 +12,11 @@ RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
  && rm /tmp/requirements.txt
 
+# CLI dell'agente: comando di shell passato alla costruzione (vedi sandbox.sh,
+# SANDBOX_AGENT_INSTALL). Vuoto = nessuna. Nessun fornitore è cablato qui.
+ARG AGENT_INSTALL=""
+RUN if [ -n "$AGENT_INSTALL" ]; then sh -c "$AGENT_INSTALL"; fi
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp/home

@@ -41,5 +41,42 @@ class SandboxStaticTest(unittest.TestCase):
         self.assertIn('remote remove origin', read(SCRIPT))
 
 
+class SandboxAgentTest(unittest.TestCase):
+    """Il lancio dell'agente rifiuta gli usi sbagliati prima di toccare docker."""
+
+    def agent(self, *args):
+        return subprocess.run(['bash', SCRIPT, 'agent', *args], capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL, timeout=30)
+
+    def test_env_accetta_solo_il_nome(self):
+        r = self.agent('--env', 'CHIAVE=segreto', '--', 'true')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('accetta solo il nome', r.stderr)
+        self.assertNotIn('segreto', r.stdout + r.stderr)
+
+    def test_serve_un_comando(self):
+        r = self.agent('--net')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('uso:', r.stderr)
+
+    def test_serve_un_terminale(self):
+        r = self.agent('--', 'true')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('terminale', r.stderr)
+
+    def test_agente_nel_container_con_le_stesse_restrizioni(self):
+        script = read(SCRIPT)
+        # Un solo punto in cui parte il container, usato da comandi e agente.
+        self.assertEqual(script.count('dk run'), 1)
+        self.assertIn('SANDBOX_HOME=/work/agent-home container_exec', script)
+        self.assertIn('AGENT_LABEL="dashboard-sandbox=agent"', script)
+
+    def test_immagine_senza_agente_cablato(self):
+        dockerfile = read(DOCKERFILE)
+        self.assertIn('ARG AGENT_INSTALL', dockerfile)
+        for name in ('claude', 'anthropic', 'openai', 'gemini'):
+            self.assertNotIn(name, dockerfile.lower())
+
+
 if __name__ == '__main__':
     unittest.main()
