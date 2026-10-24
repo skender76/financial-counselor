@@ -10,11 +10,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, 'sandbox', 'sandbox.sh')
 DOCKERFILE = os.path.join(ROOT, 'sandbox', 'Dockerfile')
 GUARD = os.path.join(ROOT, 'sandbox', 'require-sandbox.sh')
+PROXY_DOCKERFILE = os.path.join(ROOT, 'sandbox', 'proxy', 'Dockerfile')
+PROXY_CONF = os.path.join(ROOT, 'sandbox', 'proxy', 'tinyproxy.conf')
+ALLOWLIST = os.path.join(ROOT, 'sandbox', 'allowlist.txt')
 
 
 def read(path):
     with open(path, encoding='utf-8') as f:
         return f.read()
+
+
+def extract_function(script_text, name):
+    m = re.search(r'^' + re.escape(name) + r'\(\) \{.*?\n\}\n', script_text, re.M | re.S)
+    assert m, f'funzione {name} non trovata'
+    return m.group(0)
 
 
 class SandboxStaticTest(unittest.TestCase):
@@ -33,9 +42,12 @@ class SandboxStaticTest(unittest.TestCase):
         self.assertIn('--read-only', script)
 
     def test_non_monta_il_repository_reale(self):
-        # L'unico volume è la cartella del sandbox, mai REPO_ROOT né la home.
+        # Il container principale monta solo la cartella del sandbox; il
+        # proxy di sessione (ITEM-005) monta solo il filtro generato.
+        # Mai REPO_ROOT né la home, in nessuno dei due.
         volumes = re.findall(r'-v\s+"([^"]+)"', read(SCRIPT))
-        self.assertEqual(volumes, ['$SANDBOX_DIR:/work'])
+        self.assertEqual(sorted(volumes),
+                          sorted(['$SANDBOX_DIR:/work', '$filter_file:/etc/tinyproxy/filter:ro']))
         mounts = re.findall(r'--mount\s+"([^"]+)"', read(SCRIPT))
         self.assertEqual(mounts, ['$SANDBOX_DIR:w'])
 
@@ -74,8 +86,10 @@ class SandboxAgentTest(unittest.TestCase):
 
     def test_agente_nel_container_con_le_stesse_restrizioni(self):
         script = read(SCRIPT)
-        # Un solo punto in cui parte il container, usato da comandi e agente.
-        self.assertEqual(script.count('dk run'), 1)
+        # Un punto per il container principale (container_exec) e uno per il
+        # proxy di sessione (start_egress), usati sia da comandi che da agente.
+        self.assertEqual(script.count('dk run'), 2)
+        self.assertEqual(script.count('dk run -d'), 1)
         self.assertIn('SANDBOX_HOME=/work/agent-home container_exec', script)
         self.assertIn('AGENT_LABEL="dashboard-sandbox=agent"', script)
 
@@ -84,6 +98,79 @@ class SandboxAgentTest(unittest.TestCase):
         self.assertIn('ARG AGENT_INSTALL', dockerfile)
         for name in ('claude', 'anthropic', 'openai', 'gemini'):
             self.assertNotIn(name, dockerfile.lower())
+
+
+class EgressAllowlistTest(unittest.TestCase):
+    """ITEM-005: allowlist di rete in uscita, senza Docker (static + funzione pura)."""
+
+    def agent(self, *args):
+        return subprocess.run(['bash', SCRIPT, 'agent', *args], capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL, timeout=30)
+
+    def run_cmd(self, *args):
+        return subprocess.run(['bash', SCRIPT, 'run', *args], capture_output=True,
+                              text=True, stdin=subprocess.DEVNULL, timeout=30)
+
+    def test_allowlist_esiste_con_api_anthropic(self):
+        text = read(ALLOWLIST)
+        hosts = [l.split('#', 1)[0].strip() for l in text.splitlines()]
+        hosts = [h for h in hosts if h]
+        self.assertIn('api.anthropic.com', hosts)
+        for h in hosts:
+            self.assertRegex(h, r'^[A-Za-z0-9.-]+$', f'riga malformata: {h!r}')
+
+    def test_proxy_non_contiene_codice_del_progetto(self):
+        copies = re.findall(r'^\s*(?:COPY|ADD)\s+(.+)$', read(PROXY_DOCKERFILE), re.MULTILINE)
+        self.assertEqual(copies, ['tinyproxy.conf /etc/tinyproxy/tinyproxy.conf'])
+
+    def test_proxy_nega_per_default(self):
+        conf = read(PROXY_CONF)
+        self.assertIn('FilterDefaultDeny Yes', conf)
+        self.assertIn('/etc/tinyproxy/filter', conf)
+
+    def test_net_non_usa_piu_bridge_diretto(self):
+        script = read(SCRIPT)
+        self.assertIn('net=egress', script)
+        # "--network bridge" resta solo per collegare il proxy a Internet,
+        # non per il container principale (che ora va sulla rete interna).
+        self.assertEqual(script.count('--network bridge'), 1)
+        self.assertIn('start_egress', script)
+
+    def test_run_senza_net_resta_isolato(self):
+        script = read(SCRIPT)
+        self.assertIn('egress_env=(--network none)', script)
+
+    def test_allow_pip_richiede_net_in_run(self):
+        r = self.run_cmd('--allow-pip', '--', 'true')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('--allow-pip richiede --net', r.stderr)
+
+    def test_allow_pip_richiede_net_in_agent(self):
+        r = self.agent('--allow-pip', '--', 'true')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('--allow-pip richiede --net', r.stderr)
+
+    def test_filtro_pattern_ancorati_e_pip_solo_su_richiesta(self):
+        func = extract_function(read(SCRIPT), 'write_filter_file')
+        with tempfile.TemporaryDirectory() as d:
+            allow = os.path.join(d, 'allowlist.txt')
+            with open(allow, 'w') as f:
+                f.write('# commento\n\napi.anthropic.com\n')
+            out = os.path.join(d, 'filter.conf')
+            wrapper = (
+                f'ALLOWLIST={allow}\n'
+                'PIP_HOSTS=(pypi.org files.pythonhosted.org)\n'
+                f'{func}\n'
+                f'write_filter_file "$1" {out}\n'
+            )
+            subprocess.run(['bash', '-c', wrapper, 'bash', '0'], check=True, timeout=10)
+            self.assertEqual(read(out), r'^api\.anthropic\.com$' + '\n')
+
+            subprocess.run(['bash', '-c', wrapper, 'bash', '1'], check=True, timeout=10)
+            lines = read(out).splitlines()
+            self.assertIn(r'^api\.anthropic\.com$', lines)
+            self.assertIn(r'^pypi\.org$', lines)
+            self.assertIn(r'^files\.pythonhosted\.org$', lines)
 
 
 class GuardTest(unittest.TestCase):
