@@ -17,6 +17,9 @@ RUN python -m venv /opt/venv \
 ARG AGENT_INSTALL=""
 RUN if [ -n "$AGENT_INSTALL" ]; then sh -c "$AGENT_INSTALL"; fi
 
+# Segno di riconoscimento "sono nel sandbox" per sandbox/require-sandbox.sh.
+RUN echo dashboard-sandbox-v1 > /etc/dashboard-sandbox
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp/home
