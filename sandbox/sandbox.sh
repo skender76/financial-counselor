@@ -8,6 +8,7 @@
 #   sandbox/sandbox.sh agent-stop            ferma gli agenti rimasti in esecuzione
 #   sandbox/sandbox.sh test                  esegue i test nel sandbox
 #   sandbox/sandbox.sh pull BRANCH           porta un branch del sandbox nel repository reale
+#   sandbox/sandbox.sh status                controllo rapido (VM, immagine, clone, segno nell'immagine)
 #   sandbox/sandbox.sh verify [--hash-app-db]  controlla l'isolamento ed esegue i test
 #   sandbox/sandbox.sh stop                  ferma la VM del sandbox
 #
@@ -147,6 +148,19 @@ cmd_pull() {
   echo "Branch '$branch' portato nel repository. Controlla il diff, poi il push è a mano tua."
 }
 
+# Controllo rapido (pochi secondi), per l'Orchestrator a ogni passaggio di consegne.
+cmd_status() {
+  need_tools
+  local fail=0
+  st() { if "${@:2}" >/dev/null 2>&1; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+  echo "Stato del sandbox:"
+  st "VM Colima in esecuzione" colima status --profile "$PROFILE"
+  st "immagine presente" dk image inspect "$IMAGE"
+  st "clone presente" test -d "$SANDBOX_DIR/repo/.git"
+  st "segno del sandbox nell'immagine" sandbox_run -- sh -c '[ "$(cat /etc/dashboard-sandbox)" = dashboard-sandbox-v1 ]'
+  [ "$fail" = 0 ] || { echo "Sandbox NON pronto: lancia 'sandbox/sandbox.sh setup'." >&2; exit 1; }
+}
+
 cmd_verify() {
   local hash_db=0 before="" after="" fail=0
   [ "${1:-}" = "--hash-app-db" ] && hash_db=1
@@ -178,6 +192,15 @@ cmd_verify() {
   done
   unset SANDBOX_HOME
 
+  echo "Guardia:"
+  check "dentro il sandbox la guardia lascia passare" "/work/repo/sandbox/require-sandbox.sh || [ \"\$(cat /etc/dashboard-sandbox)\" = dashboard-sandbox-v1 ]"
+  # Fuori dal sandbox (sul Mac) la guardia deve bloccare, senza uscita di emergenza.
+  if env -u DASHBOARD_ALLOW_HOST "$REPO_ROOT/sandbox/require-sandbox.sh" >/dev/null 2>&1; then
+    echo "  FAIL la guardia lascia passare anche fuori dal sandbox"; fail=1
+  else
+    echo "  ok   la guardia blocca fuori dal sandbox"
+  fi
+
   echo "Test:"
   if cmd_test; then echo "  ok   i test passano nel sandbox"; else echo "  FAIL i test"; fail=1; fi
 
@@ -197,7 +220,8 @@ case "${1:-help}" in
   agent-stop) shift; cmd_agent_stop "$@" ;;
   test)       shift; cmd_test "$@" ;;
   pull)       shift; cmd_pull "$@" ;;
+  status)     shift; cmd_status "$@" ;;
   verify)     shift; cmd_verify "$@" ;;
   stop)       shift; cmd_stop "$@" ;;
-  *)          sed -n '2,20p' "$0" ;;
+  *)          sed -n '2,21p' "$0" ;;
 esac
