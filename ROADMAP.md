@@ -55,3 +55,24 @@ Statuses: `OPEN` | `READY FOR DEV` | `IN PROGRESS` | `BLOCKED` | `NEEDS HUMAN` |
 - **Out of scope:** N/A.
 - **Done when:** logging in as the Demo user shows a fully populated dashboard; the demo data never touches or mixes with a real user's data; the Demo user's initial state can be restored; and the item's tests (see ITEM-000) pass.
 - **Depends on:** ITEM-000.
+
+## ITEM-003 — Agent inside the sandbox
+
+- **Status:** OPEN
+- **Why:** ITEM-001 isolates the commands (tests, server, git) but the agent process itself, with its file tools, still runs on the owner's machine with the owner's permissions. Staying inside the clean clone is a convention, not something enforced. One agent session already ran `shasum` on `app.db` against the rules in `AGENTS.md`.
+- **Goal:** the agent process runs inside the sandbox, so everything it does (reading, writing, running commands, committing) happens in the container and cannot reach the owner's real data and secrets.
+- **Scope (to be refined by the Functional and Technical Lead agents):**
+  - A documented command that starts an agent session inside the sandbox container, with `/work/repo` as its working directory.
+  - The agent's own tools (file read/write/edit, shell) act only on files visible in the container.
+  - The agent's credentials (for example its API key) reach the container in a controlled way, never from a mounted home directory, and are not written to the workspace or to git.
+  - Network access is limited to what the agent needs to talk to its model provider (an allowlist, not open internet); tests and the local server stay offline as in ITEM-001.
+  - Works with the git worktrees of `AGENTS.md` (section 6) and with `sandbox.sh pull`.
+- **Open questions (the Technical Lead Agent must settle them with the owner):**
+  - Which agent runtimes must be supported (Claude Code only, or a generic way to run any agent CLI)? The owner wants to limit lock-in.
+  - How is the network allowlist enforced with Colima and docker (a proxy container, firewall rules in the VM, an internal docker network)?
+  - How are the agent's credentials passed (environment variable at start, docker secret, a file removed after start) and how are they kept out of logs and commits?
+  - Does the agent keep its session history and settings between runs, and where are they stored?
+  - How does the owner watch and interrupt an agent running in the container (attached terminal, logs)?
+- **Out of scope:** protecting the production server; browser/UI testing; making the model provider itself trusted.
+- **Done when:** from a session started by the documented command, reading `app.db`, `.env`, `dati.json`, `ai-config.json`, the real repository path and `~/.ssh` fails when attempted through the agent's own file tools as well as its shell; a task (for example adding a test) is completed and committed inside the sandbox and brought out with `sandbox.sh pull`; outbound connections to hosts outside the allowlist fail; and the owner's `app.db` is byte-identical before and after.
+- **Depends on:** ITEM-001.
