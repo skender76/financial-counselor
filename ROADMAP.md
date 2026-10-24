@@ -24,10 +24,7 @@ Only items that are not `DONE` keep their full text here. A `DONE` item is reduc
 
 ## ITEM-005 — Egress allowlist
 
-- **Status:** IN PROGRESS — `docs/items/ITEM-005.func.md`, `docs/items/ITEM-005.tech.md`.
-- **Why:** with open network an agent (or code it runs) can send data anywhere, and `--network none` cannot be used once the agent runs inside the container and must reach its model provider.
-- **Goal:** outbound connections from the sandbox are limited to a short allowlist, enforced outside the agent's control.
-- **Depends on:** ITEM-003.
+- **Status:** DONE — full text in `ROADMAP-DONE.md`.
 
 ## ITEM-006 — Agent credentials
 
