@@ -64,6 +64,9 @@ cmd_setup() {
 
 # Unico punto in cui parte un container: tutte le restrizioni stanno qui, quindi
 # vale lo stesso isolamento per i comandi e per l'agente.
+# Nota: sul mount di Colima le cartelle create dal Mac risultano di root nel
+# container e git le rifiuta ("dubious ownership"): safe.directory='*' vale
+# solo qui dentro, dove tutto è il sandbox.
 # Uso: container_exec RETE CMD...   (opzioni extra di docker in DOCKER_OPTS)
 DOCKER_OPTS=()
 container_exec() {
@@ -77,6 +80,7 @@ container_exec() {
     --memory 2g --pids-limit 512 \
     --user "$(id -u):$(id -g)" \
     -e "HOME=${SANDBOX_HOME:-/tmp/home}" \
+    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
     -v "$SANDBOX_DIR:/work" \
     "$IMAGE" "$@"
 }
@@ -166,7 +170,7 @@ cmd_verify() {
     done
     check "la home dell'host non esiste" "[ ! -e '$HOME/.ssh' ] && [ ! -e '$REPO_ROOT' ]"
     check "l'unico mount dell'host è /work" "[ \"\$(grep -cE ' (virtiofs|fuse[^ ]*|9p|sshfs) ' /proc/mounts)\" -le 1 ]"
-    check "git push fallisce" "! git push"
+    check "git push fallisce (nessun remote)" "git push 2>&1 | grep -q 'No configured push destination'"
     check "nessuna rete" "! python -c 'import socket; socket.create_connection((\"1.1.1.1\", 53), 2)'"
     check "si scrive in /work" "touch /work/.verifica && rm /work/.verifica"
     # Worktree usa e getta: prova anche il commit senza toccare il lavoro in corso.

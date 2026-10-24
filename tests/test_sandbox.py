@@ -37,6 +37,12 @@ class SandboxStaticTest(unittest.TestCase):
         mounts = re.findall(r'--mount\s+"([^"]+)"', read(SCRIPT))
         self.assertEqual(mounts, ['$SANDBOX_DIR:w'])
 
+    def test_git_funziona_con_la_proprieta_dei_mount(self):
+        script = read(SCRIPT)
+        self.assertIn('GIT_CONFIG_KEY_0=safe.directory', script)
+        # Il controllo sul push deve fallire per mancanza di remote, non per altro.
+        self.assertIn("No configured push destination", script)
+
     def test_il_clone_non_ha_remote(self):
         self.assertIn('remote remove origin', read(SCRIPT))
 
