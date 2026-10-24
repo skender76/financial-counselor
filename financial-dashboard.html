@@ -560,7 +560,7 @@
   <div class="nw-card">
     <div class="nw-label">Patrimonio Liquido</div>
     <div class="nw-value" id="liquidNetWorth">—</div>
-    <div class="nw-sub">Liquidità (Fineco+BPER+Revolut) + investimenti di mercato − mutui residui</div>
+    <div class="nw-sub">Liquidità (tutti i conti) + investimenti di mercato − mutui residui</div>
   </div>
   <div class="nw-card">
     <div class="nw-label">Pensione + TFR</div>
@@ -633,37 +633,11 @@
   </div>
 
   <div class="card">
-    <div class="section-title">💵 Liquidità</div>
-    <div class="line-item">
-      <div>
-        <div class="line-label">Fineco</div>
-        <div class="line-sublabel">Conto principale + cash PAC</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <div class="line-value gray" id="finecoVal">—</div>
-        <button class="btn-icon-sm" onclick="openAccountBalanceModal('fineco','Fineco')" title="Modifica saldo">✏️</button>
-      </div>
+    <div class="expense-header">
+      <div class="section-title" style="margin-bottom:0;">💵 Liquidità</div>
+      <button class="btn-icon-header" onclick="openAccountModal()" title="Aggiungi conto">+</button>
     </div>
-    <div class="line-item">
-      <div>
-        <div class="line-label">BPER</div>
-        <div class="line-sublabel">Conto con mutuo e spese casa</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <div class="line-value gray" id="bperVal">—</div>
-        <button class="btn-icon-sm" onclick="openAccountBalanceModal('bper','BPER')" title="Modifica saldo">✏️</button>
-      </div>
-    </div>
-    <div class="line-item">
-      <div>
-        <div class="line-label">Revolut</div>
-        <div class="line-sublabel">Spese quotidiane</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <div class="line-value gray" id="revolutVal">—</div>
-        <button class="btn-icon-sm" onclick="openAccountBalanceModal('revolut','Revolut')" title="Modifica saldo">✏️</button>
-      </div>
-    </div>
+    <div id="accountsList"></div>
     <div class="expense-header" style="margin-top:14px;">
       <div class="section-title" style="margin-bottom:0;">🏠 Immobile</div>
       <div style="display:flex;gap:6px;">
@@ -714,19 +688,28 @@
   </div>
 </div>
 
-<!-- Modifica rapida saldo conto (Liquidità) -->
-<div class="modal-overlay" id="accountBalanceModalOverlay">
+<!-- Aggiungi/modifica conto (Liquidità) -->
+<div class="modal-overlay" id="accountModalOverlay">
   <div class="modal">
-    <h2 id="accountBalanceModalTitle">✏️ Modifica saldo</h2>
+    <h2 id="accountModalTitle">🏦 Nuovo conto</h2>
     <div class="modal-section">
       <div class="field-row">
-        <label class="field-label" id="accountBalanceModalLabel">Saldo (€)</label>
-        <input type="number" class="field-input" id="account-balance-value" step="1">
+        <label class="field-label">Nome</label>
+        <input type="text" class="field-input" id="account-name" style="width:220px;text-align:left;" maxlength="40" placeholder="es. Intesa Sanpaolo">
       </div>
+      <div class="field-row">
+        <label class="field-label">Descrizione (opz.)</label>
+        <input type="text" class="field-input" id="account-note" style="width:220px;text-align:left;" maxlength="80" placeholder="es. Conto risparmio">
+      </div>
+      <div class="field-row">
+        <label class="field-label">Saldo (€)</label>
+        <input type="number" class="field-input" id="account-balance-value" step="0.01">
+      </div>
+      <div class="chat-attach-note" id="accountRenameNote" style="display:none;">Se cambi il nome, viene aggiornato anche in movimenti, trasferimenti, flussi mensili e mutuo.</div>
     </div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeAccountBalanceModal()">Annulla</button>
-      <button class="btn-save" onclick="saveAccountBalance()">Salva</button>
+      <button class="btn-cancel" onclick="closeAccountModal()">Annulla</button>
+      <button class="btn-save" onclick="saveAccount()">Salva</button>
     </div>
   </div>
 </div>
@@ -794,11 +777,7 @@
       </div>
       <div class="field-row">
         <label class="field-label">Conto di addebito</label>
-        <select class="field-input" id="mortgage-account" style="width:200px;">
-          <option value="Fineco">Fineco</option>
-          <option value="BPER">BPER</option>
-          <option value="Revolut">Revolut</option>
-        </select>
+        <select class="field-input" id="mortgage-account" style="width:200px;"></select>
       </div>
       <div class="field-row">
         <label class="field-label">Immobile collegato</label>
@@ -849,9 +828,6 @@
         <label class="field-label">Conto (opz., solo informativo)</label>
         <select class="field-input" id="flow-account" style="width:200px;">
           <option value="">Nessuno</option>
-          <option value="Fineco">Fineco</option>
-          <option value="BPER">BPER</option>
-          <option value="Revolut">Revolut</option>
         </select>
       </div>
       <div class="field-row">
@@ -918,9 +894,6 @@
     <select class="filter-select" id="filter-year" onchange="applyExpenseFilters()"></select>
     <select class="filter-select" id="filter-account" onchange="applyExpenseFilters()">
       <option value="">Tutti i conti</option>
-      <option value="Fineco">Fineco</option>
-      <option value="BPER">BPER</option>
-      <option value="Revolut">Revolut</option>
     </select>
     <select class="filter-select" id="filter-direction" onchange="applyExpenseFilters()">
       <option value="">Tutte le direzioni</option>
@@ -952,11 +925,7 @@
     <div class="modal-section">
       <div class="field-row">
         <label class="field-label">Conto di riferimento (valido per tutte le righe)</label>
-        <select class="field-input" id="expense-account" style="width:160px;" onchange="refreshBatch()">
-          <option value="Fineco">Fineco</option>
-          <option value="BPER">BPER</option>
-          <option value="Revolut">Revolut</option>
-        </select>
+        <select class="field-input" id="expense-account" style="width:160px;" onchange="refreshBatch()"></select>
       </div>
     </div>
     <div class="batch-wrap">
@@ -1025,19 +994,11 @@
       </div>
       <div class="field-row">
         <label class="field-label">Da conto</label>
-        <select class="field-input" id="transfer-from" style="width:160px;">
-          <option value="Fineco">Fineco</option>
-          <option value="BPER">BPER</option>
-          <option value="Revolut">Revolut</option>
-        </select>
+        <select class="field-input" id="transfer-from" style="width:160px;"></select>
       </div>
       <div class="field-row">
         <label class="field-label">A conto</label>
-        <select class="field-input" id="transfer-to" style="width:160px;">
-          <option value="Fineco">Fineco</option>
-          <option value="BPER">BPER</option>
-          <option value="Revolut">Revolut</option>
-        </select>
+        <select class="field-input" id="transfer-to" style="width:160px;"></select>
       </div>
       <div class="field-row">
         <label class="field-label">Importo (€)</label>
@@ -1061,11 +1022,7 @@
     <div class="modal-section">
       <div class="field-row">
         <label class="field-label">Conto</label>
-        <select class="field-input" id="statement-account" style="width:200px;" onchange="onStatementAccountChange()">
-          <option value="Revolut">Revolut</option>
-          <option value="BPER">BPER</option>
-          <option value="Fineco">Fineco</option>
-        </select>
+        <select class="field-input" id="statement-account" style="width:200px;" onchange="onStatementAccountChange()"></select>
       </div>
       <div class="field-row">
         <label class="field-label">Tipo di file</label>
@@ -1215,18 +1172,7 @@
     <h2>✏️ Aggiorna i tuoi dati</h2>
     <div class="modal-section">
       <div class="modal-section-title">Liquidità</div>
-      <div class="field-row">
-        <label class="field-label">Fineco – Cash (€)</label>
-        <input type="number" class="field-input" id="input-fineco" step="1">
-      </div>
-      <div class="field-row">
-        <label class="field-label">BPER – Cash (€)</label>
-        <input type="number" class="field-input" id="input-bper" step="1">
-      </div>
-      <div class="field-row" style="margin-bottom:0;">
-        <label class="field-label">Revolut (€)</label>
-        <input type="number" class="field-input" id="input-revolut" step="1">
-      </div>
+      <div id="modalAccountsFields"></div>
     </div>
     <div class="modal-section">
       <div class="field-row" style="margin-bottom:0;">
@@ -1877,7 +1823,7 @@
 
   function onStatementAccountChange() {
     const account = document.getElementById('statement-account').value;
-    const ext = STATEMENT_EXTENSIONS[account];
+    const ext = STATEMENT_EXTENSIONS[account] || '';
     document.getElementById('statement-file').accept = ext;
     document.getElementById('statement-ext-hint').textContent = '(' + ext + ')';
     // La carta di credito è gestita solo per BPER.
@@ -2079,6 +2025,7 @@
     const kind = document.getElementById('statement-kind').value;
     const file = document.getElementById('statement-file').files[0];
     const out = document.getElementById('statementResult');
+    if (!account) { alert('Nessun conto collegato a una banca supportata (Revolut, BPER, Fineco).'); return; }
     if (!file) { alert('Seleziona il file da importare.'); return; }
 
     const btn = document.getElementById('statementAnalyzeBtn');
@@ -2096,6 +2043,10 @@
       if (res.status === 404) throw new Error('il server è di una versione precedente e non gestisce l\'importazione: chiedi di aggiornarlo e riavviarlo.');
       if (!res.ok || !data || data.status !== 'ok') throw new Error((data && data.message) || ('HTTP ' + res.status));
 
+      // Il server risponde con il tipo di banca: lo si traduce nel nome attuale del conto.
+      const accName = accountByBank(account);
+      data.movements.forEach(m => { m.bank = m.account; m.account = accName; });
+      data.summary.account = accName;
       const rec = reconcileStatement(data);
       const covered = detectTransfers(rec.items);
       statementSession = { data: data, items: rec.items, flagged: rec.flagged, covered: covered, busy: true };
@@ -2293,7 +2244,7 @@
         amount: m.amount,
         imported: true,
         noBalance: true,
-        source: { bank: m.account, kind: m.source_kind, importId: importId, importedOn: now },
+        source: { bank: m.bank || m.account, kind: m.source_kind, importId: importId, importedOn: now },
       };
       if (m.provisional) entry.provisional = true;
       if (base && base.autoMortgage) entry.autoMortgage = true; // altrimenti la rata verrebbe rigenerata
@@ -2462,10 +2413,63 @@
 
   const DEFAULTS = {
     lastUpdated: '2026-06-16',
-    fineco: 4200,
-    bper: 2185,
-    revolut: 420,
   };
+
+  // ===== Conti di liquidità (lista dinamica) =====
+  // Ogni conto ha: id, name (è anche il riferimento usato da movimenti,
+  // trasferimenti, flussi e mutuo: rinominarlo li aggiorna tutti), note (opz.),
+  // balance e bank ('Fineco' | 'BPER' | 'Revolut' | ''). bank collega il conto
+  // all'importazione degli estratti conto e alla regola di addebito della carta
+  // BPER: resta anche se il conto viene rinominato; i conti nuovi hanno bank ''.
+  const ACCOUNTS_STORAGE_KEY = 'skender_fin_accounts_v1';
+  const LEGACY_ACCOUNT_BALANCES = { fineco: 4200, bper: 2185, revolut: 420 };
+
+  function migrateLegacyAccounts() {
+    const existing = store.getItem(ACCOUNTS_STORAGE_KEY);
+    if (existing) {
+      try { return JSON.parse(existing); } catch { /* fall through to rebuild */ }
+    }
+    let legacy = {};
+    try {
+      const raw = store.getItem(STORAGE_KEY);
+      legacy = raw ? JSON.parse(raw) : {};
+    } catch { legacy = {}; }
+    const bal = k => legacy[k] != null ? legacy[k] : LEGACY_ACCOUNT_BALANCES[k];
+    const list = [
+      { id: 'fineco', name: 'Fineco', bank: 'Fineco', note: 'Conto principale + cash PAC', balance: bal('fineco') },
+      { id: 'bper', name: 'BPER', bank: 'BPER', note: 'Conto con mutuo e spese casa', balance: bal('bper') },
+      { id: 'revolut', name: 'Revolut', bank: 'Revolut', note: 'Spese quotidiane', balance: bal('revolut') },
+    ];
+    store.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(list));
+    return list;
+  }
+
+  function saveAccounts(list) {
+    store.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let accounts = migrateLegacyAccounts();
+  let editingAccountId = null;
+
+  function accountNames() { return accounts.map(a => a.name); }
+  function findAccount(name) { return accounts.find(a => a.name === name) || null; }
+  function accountBank(name) { const a = findAccount(name); return a ? (a.bank || '') : ''; }
+  function accountBalance(name) { const a = findAccount(name); return a ? (a.balance || 0) : 0; }
+  function accountsTotal() { return accounts.reduce((sum, a) => sum + (a.balance || 0), 0); }
+  // Nome del conto collegato a una banca (anche se rinominato); se non c'è, il primo conto.
+  function accountByBank(bank) {
+    const a = accounts.find(x => x.bank === bank) || accounts[0];
+    return a ? a.name : '';
+  }
+
+  // Stipendio per conto, per riepilogo e consulente AI (solo i conti con stipendio).
+  function salaryByAccountText(sep) {
+    const parts = accounts
+      .map(a => ({ name: a.name, value: sumFlowsBy('stipendio', a.name) }))
+      .filter(x => x.value > 0)
+      .map(x => x.name + ' ' + fmt(x.value));
+    return parts.length ? parts.join(sep) : '—';
+  }
 
   // ===== Flussi mensili (lista dinamica) =====
   // Ogni flusso ha: id, name, category (una delle 4 fisse sotto — necessarie
@@ -2511,7 +2515,7 @@
   let editingFlowId = null;
 
   // Somma i flussi di una categoria, opzionalmente filtrati per conto (usato per
-  // lo split Fineco/BPER dello stipendio nel riepilogo). Se account è omesso,
+  // lo split per conto dello stipendio nel riepilogo). Se account è omesso,
   // somma la categoria intera indipendentemente dal conto.
   function sumFlowsBy(category, account) {
     return flows
@@ -2529,8 +2533,6 @@
     // sempre ricalcolati al volo dalla lista flows (vedi sopra), così restano
     // coerenti anche subito dopo un add/modifica/elimina di un flusso.
     d.salary = sumFlowsBy('stipendio');
-    d.salaryFineco = sumFlowsBy('stipendio', 'Fineco');
-    d.salaryBper = sumFlowsBy('stipendio', 'BPER');
     d.pensionEmp = sumFlowsBy('pensione_dipendente');
     d.pensionAz = sumFlowsBy('pensione_azienda');
     return d;
@@ -2539,10 +2541,12 @@
   function saveData() {
     const d = {
       lastUpdated: todayIsoLocal(),
-      fineco: parseFloat(document.getElementById('input-fineco').value) || 0,
-      bper: parseFloat(document.getElementById('input-bper').value) || 0,
-      revolut: parseFloat(document.getElementById('input-revolut').value) || 0,
     };
+    document.querySelectorAll('#modalAccountsFields input[data-account-id]').forEach(inp => {
+      const acc = accounts.find(x => x.id === inp.dataset.accountId);
+      if (acc) acc.balance = parseFloat(inp.value) || 0;
+    });
+    saveAccounts(accounts);
     store.setItem(STORAGE_KEY, JSON.stringify(d));
     touchLastModified();
     closeModal();
@@ -2937,36 +2941,155 @@
     sel.value = '';
   }
 
-  // ===== Liquidità: modifica rapida singolo saldo =====
-  // Fineco, BPER e Revolut restano conti fissi (non aggiungibili/eliminabili qui):
-  // questa è solo una scorciatoia per aggiustare un saldo singolo senza aprire il
-  // modal completo "Aggiorna dati". Scrive direttamente sul record principale.
+  // ===== Liquidità: aggiungi, modifica ed elimina conti =====
 
-  let editingAccountKey = null;
+  const ACCOUNT_COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#047857', '#a7f3d0'];
 
-  function openAccountBalanceModal(key, label) {
-    editingAccountKey = key;
-    document.getElementById('accountBalanceModalTitle').textContent = '✏️ Modifica saldo ' + label;
-    document.getElementById('accountBalanceModalLabel').textContent = label + ' – saldo (€)';
-    const d = loadData();
-    document.getElementById('account-balance-value').value = d[key];
-    document.getElementById('accountBalanceModalOverlay').classList.add('open');
+  function renderAccounts() {
+    const wrap = document.getElementById('accountsList');
+    if (!accounts.length) {
+      wrap.innerHTML = '<div class="expense-empty">Nessun conto registrato. Aggiungine uno con il pulsante +.</div>';
+      return;
+    }
+    wrap.innerHTML = accounts.map(a =>
+      '<div class="line-item">' +
+        '<div>' +
+          '<div class="line-label">' + escapeHtml(a.name) + '</div>' +
+          (a.note ? '<div class="line-sublabel">' + escapeHtml(a.note) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<div class="line-value gray">' + fmt(a.balance || 0) + '</div>' +
+          '<button class="btn-icon-sm" onclick="openAccountModal(\'' + a.id + '\')" title="Modifica conto">✏️</button>' +
+          '<button class="btn-icon-sm" onclick="confirmDeleteAccount(\'' + a.id + '\')" title="Elimina conto">🗑️</button>' +
+        '</div>' +
+      '</div>'
+    ).join('');
   }
 
-  function closeAccountBalanceModal() {
-    document.getElementById('accountBalanceModalOverlay').classList.remove('open');
-    editingAccountKey = null;
+  // Riempie i menu a tendina dei conti (movimenti, trasferimenti, flussi, mutuo,
+  // filtri, importazione estratti) mantenendo la selezione corrente se esiste ancora.
+  function populateAccountSelects() {
+    const optionsHtml = list => list.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
+    const names = accountNames();
+    [
+      ['mortgage-account', '', names],
+      ['flow-account', '<option value="">Nessuno</option>', names],
+      ['filter-account', '<option value="">Tutti i conti</option>', names],
+      ['expense-account', '', names],
+      ['transfer-from', '', names],
+      ['transfer-to', '', names],
+    ].forEach(([id, first, list]) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = first + optionsHtml(list);
+      if (prev && list.indexOf(prev) !== -1) sel.value = prev;
+    });
+    const stmt = document.getElementById('statement-account');
+    if (stmt) {
+      const prev = stmt.value;
+      const banks = accounts.filter(a => a.bank);
+      stmt.innerHTML = banks.map(a => '<option value="' + escapeHtml(a.bank) + '">' + escapeHtml(a.name) + '</option>').join('');
+      if (prev && banks.some(a => a.bank === prev)) stmt.value = prev;
+    }
   }
 
-  function saveAccountBalance() {
-    const value = parseFloat(document.getElementById('account-balance-value').value);
-    if (isNaN(value)) { alert('Inserisci un valore valido.'); return; }
-    const d = loadData();
-    d[editingAccountKey] = value;
-    store.setItem(STORAGE_KEY, JSON.stringify(d));
+  function openAccountModal(id) {
+    editingAccountId = id || null;
+    const acc = id ? accounts.find(x => x.id === id) : null;
+    if (id && !acc) return;
+    document.getElementById('accountModalTitle').textContent = acc ? '✏️ Modifica conto' : '🏦 Nuovo conto';
+    document.getElementById('account-name').value = acc ? acc.name : '';
+    document.getElementById('account-note').value = acc ? (acc.note || '') : '';
+    document.getElementById('account-balance-value').value = acc ? (acc.balance || 0) : '';
+    document.getElementById('accountRenameNote').style.display = acc ? 'block' : 'none';
+    document.getElementById('accountModalOverlay').classList.add('open');
+    document.getElementById('account-name').focus();
+  }
+
+  function closeAccountModal() {
+    document.getElementById('accountModalOverlay').classList.remove('open');
+    editingAccountId = null;
+  }
+
+  // Il nome è il riferimento usato dagli altri dati: va aggiornato ovunque.
+  function renameAccountEverywhere(oldName, newName) {
+    expenses.forEach(e => { if (e.account === oldName) e.account = newName; });
+    saveExpenses(expenses);
+    transfers.forEach(t => {
+      if (t.from === oldName) t.from = newName;
+      if (t.to === oldName) t.to = newName;
+    });
+    saveTransfers(transfers);
+    flows.forEach(f => { if (f.account === oldName) f.account = newName; });
+    saveFlows(flows);
+    if (mortgage.account === oldName) { mortgage.account = newName; saveMortgage(mortgage); }
+    const def = loadEntryDefaults();
+    if (def.account === oldName) { def.account = newName; saveEntryDefaults(def); }
+  }
+
+  function saveAccount() {
+    const name = document.getElementById('account-name').value.trim();
+    const note = document.getElementById('account-note').value.trim();
+    const balance = parseFloat(document.getElementById('account-balance-value').value);
+    if (!name) { alert('Inserisci un nome per il conto.'); return; }
+    if (isNaN(balance)) { alert('Inserisci un saldo valido.'); return; }
+    const clash = accounts.some(a => a.id !== editingAccountId && a.name.toLowerCase() === name.toLowerCase());
+    if (clash) { alert('Esiste già un conto con questo nome.'); return; }
+
+    if (editingAccountId) {
+      const acc = accounts.find(x => x.id === editingAccountId);
+      if (!acc) { closeAccountModal(); return; }
+      const oldName = acc.name;
+      acc.name = name; acc.note = note; acc.balance = balance;
+      if (oldName !== name) renameAccountEverywhere(oldName, name);
+    } else {
+      accounts.push({ id: 'acc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, bank: '', note: note, balance: balance });
+    }
+    saveAccounts(accounts);
     touchLastModified();
-    closeAccountBalanceModal();
+    closeAccountModal();
+    refreshAfterAccountsChange();
+  }
+
+  function refreshAfterAccountsChange() {
     render(loadData());
+    renderFlows();
+    renderExpenses();
+    renderAnnualAnalysis();
+    renderTransfers();
+    renderMortgageDetails();
+  }
+
+  // Cosa fa riferimento a un conto (per bloccarne l'eliminazione).
+  function accountUsage(name) {
+    return {
+      expenses: expenses.filter(e => e.account === name).length,
+      transfers: transfers.filter(t => t.from === name || t.to === name).length,
+      flows: flows.filter(f => f.account === name).length,
+      mortgage: mortgage.account === name && mortgageTotal() > 0,
+    };
+  }
+
+  function confirmDeleteAccount(id) {
+    const acc = accounts.find(x => x.id === id);
+    if (!acc) return;
+    if (accounts.length <= 1) { alert('Deve restare almeno un conto.'); return; }
+    const u = accountUsage(acc.name);
+    const used = [];
+    if (u.expenses) used.push(u.expenses + (u.expenses === 1 ? ' movimento' : ' movimenti'));
+    if (u.transfers) used.push(u.transfers + (u.transfers === 1 ? ' trasferimento' : ' trasferimenti'));
+    if (u.flows) used.push(u.flows + (u.flows === 1 ? ' flusso mensile' : ' flussi mensili'));
+    if (u.mortgage) used.push('il mutuo (conto di addebito)');
+    if (used.length) {
+      alert('Non posso eliminare "' + acc.name + '": è usato da ' + used.join(', ') + '.\n\nSposta o elimina prima queste voci, poi riprova.');
+      return;
+    }
+    if (!confirm('Eliminare il conto "' + acc.name + '" (saldo ' + fmt(acc.balance || 0) + ')? Il saldo non conterà più nella liquidità. L\'operazione non è reversibile.')) return;
+    accounts = accounts.filter(x => x.id !== id);
+    saveAccounts(accounts);
+    touchLastModified();
+    refreshAfterAccountsChange();
   }
 
   // ===== Immobile (lista dinamica di proprietà) =====
@@ -3149,7 +3272,7 @@
     document.getElementById('mortgage-monthly').value = mortgage.monthly != null ? mortgage.monthly : '';
     document.getElementById('mortgage-remaining').value = mortgage.remainingInstallments != null ? mortgage.remainingInstallments : '';
     document.getElementById('mortgage-due-day').value = mortgage.dueDay != null ? mortgage.dueDay : '';
-    document.getElementById('mortgage-account').value = mortgage.account || 'BPER';
+    document.getElementById('mortgage-account').value = mortgage.account || accountByBank('BPER');
     document.getElementById('mortgage-residual').value = mortgageResidual();
     document.getElementById('mortgage-notes').value = mortgage.notes || '';
     stagedMortgageDoc = mortgage.document || null;
@@ -3331,9 +3454,9 @@
     const marketTotal = sumInvestments(marketList);
     const houseTotal = propertiesTotal();
     const mortgageTot = mortgageTotal();
-    const liquidCash = d.fineco + d.bper + d.revolut;
-    const liquidAssets = marketTotal + d.fineco + d.bper + d.revolut;
-    const totalAssets = houseTotal + pensionTotal + marketTotal + d.fineco + d.bper + d.revolut;
+    const liquidCash = accountsTotal();
+    const liquidAssets = marketTotal + liquidCash;
+    const totalAssets = houseTotal + pensionTotal + marketTotal + liquidCash;
     const liquidNet = liquidAssets - mortgageTot;
     const illiquidShare = totalAssets > 0 ? ((houseTotal + pensionTotal) / totalAssets) * 100 : 0;
     const emergencyMonths = d.salary > 0 ? liquidCash / d.salary : 0;
@@ -3368,7 +3491,7 @@
     // Fondo di emergenza
     if (d.salary > 0) {
       if (emergencyMonths < 3) {
-        negatives.push('La liquidità realmente disponibile (Fineco, BPER, Revolut: ' + fmt(liquidCash) + ') copre circa ' + emergencyMonths.toFixed(1) + ' mesi del tuo stipendio netto, sotto la soglia minima di 3 mesi che considero lo standard prudenziale per chi ha un\'unica fonte di reddito da lavoro dipendente.');
+        negatives.push('La liquidità realmente disponibile (' + accountNames().join(', ') + ': ' + fmt(liquidCash) + ') copre circa ' + emergencyMonths.toFixed(1) + ' mesi del tuo stipendio netto, sotto la soglia minima di 3 mesi che considero lo standard prudenziale per chi ha un\'unica fonte di reddito da lavoro dipendente.');
         short.push('Priorità nei prossimi mesi: portare la liquidità di emergenza ad almeno 3 mensilità nette (circa ' + fmt(d.salary * 3) + ') prima di destinare nuovo risparmio a PAC o altri investimenti.');
       } else if (emergencyMonths > 6) {
         negatives.push('La liquidità immediata copre ' + emergencyMonths.toFixed(1) + ' mesi di stipendio netto, oltre la soglia dei 6 mesi generalmente considerata sufficiente: il capitale in eccesso resta fermo su conti a rendimento nullo o quasi.');
@@ -3429,9 +3552,9 @@
     // Limiti dell'analisi (dati mancanti per completarla)
     const expensesThisMonth = (typeof expenses !== 'undefined' ? expenses : []).filter(e => e.date && e.date.slice(0, 7) === currentMonthKey());
     if (!expensesThisMonth.length) {
-      limits.push('Movimenti ricorrenti per singolo conto: sappiamo quanto entra su Fineco e BPER ogni mese (stipendio), ma non ancora quanto esce (bollette, mutuo, spese varie) né eventuali entrate extra — il registro movimenti è vuoto per il mese corrente. Qualunque proiezione di saldo futuro assume "nessuna spesa o entrata aggiuntiva oltre a quanto tracciato", quindi è una stima ottimistica, non un dato certo.');
+      limits.push('Movimenti ricorrenti per singolo conto: sappiamo quanto entra sui conti ogni mese (stipendio), ma non ancora quanto esce (bollette, mutuo, spese varie) né eventuali entrate extra — il registro movimenti è vuoto per il mese corrente. Qualunque proiezione di saldo futuro assume "nessuna spesa o entrata aggiuntiva oltre a quanto tracciato", quindi è una stima ottimistica, non un dato certo.');
     } else {
-      limits.push('I saldi Fineco/BPER/Revolut qui sopra riflettono già i movimenti immediati che hai registrato (addebiti in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti — scalati o aggiunti automaticamente). Le spese a carta di credito NON sono ancora scalate, verranno addebitate il mese successivo. Il registro potrebbe comunque non essere completo se non hai inserito tutti i movimenti reali.');
+      limits.push('I saldi dei conti qui sopra riflettono già i movimenti immediati che hai registrato (addebiti in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti — scalati o aggiunti automaticamente). Le spese a carta di credito NON sono ancora scalate, verranno addebitate il mese successivo. Il registro potrebbe comunque non essere completo se non hai inserito tutti i movimenti reali.');
     }
     limits.push('Orizzonte temporale e obiettivi specifici (es. cambio casa, indipendenza finanziaria, data desiderata): senza questi riferimenti non posso valutare con precisione se l\'allocazione attuale tra liquidità, PAC e immobile è coerente con i tuoi piani.');
     limits.push('Tolleranza al rischio dichiarata: il giudizio sugli investimenti di mercato si basa solo sul nome/etichetta che hai inserito, non su un profilo di rischio validato con te.');
@@ -3510,8 +3633,6 @@
     ['accredito_diretto', 'Accredito diretto'],
   ];
 
-  const ACCOUNT_KEY_MAP = { Fineco: 'fineco', BPER: 'bper', Revolut: 'revolut' };
-
   // Data di oggi in formato locale YYYY-MM-DD, calcolata dai campi LOCALI di
   // Date (getFullYear/getMonth/getDate) e MAI tramite toISOString(), che
   // converte in UTC: per un fuso avanti rispetto a UTC (es. Italia, UTC+2 in
@@ -3547,11 +3668,10 @@
   // addebito è arrivato (deduzione differita, controllata a ogni apertura del
   // dashboard). Ogni spesa viene scalata una sola volta (flag applied/ccApplied).
   function adjustAccountBalance(account, delta) {
-    const key = ACCOUNT_KEY_MAP[account];
-    if (!key) return;
-    const d = loadData();
-    d[key] = (d[key] || 0) + delta;
-    store.setItem(STORAGE_KEY, JSON.stringify(d));
+    const acc = findAccount(account);
+    if (!acc) return;
+    acc.balance = (acc.balance || 0) + delta;
+    saveAccounts(accounts);
   }
 
   // Giorno del mese di scadenza in cui la carta di credito viene effettivamente
@@ -3559,7 +3679,7 @@
   // tutti gli altri conti (comportamento invariato di prima: appena inizia il
   // mese di scadenza, senza soglia sul giorno).
   function ccDueDay(account) {
-    return account === 'BPER' ? 13 : 1;
+    return accountBank(account) === 'BPER' ? 13 : 1;
   }
 
   // Mese di scadenza per una spesa a carta di credito. Regola normale: un mese
@@ -3572,7 +3692,7 @@
   function ccDueMonthForPurchase(dateStr, account) {
     const due = nextMonthKey(dateStr);
     const day = Number((dateStr || todayIsoLocal()).slice(8, 10));
-    if (account === 'BPER' && day >= 30) {
+    if (accountBank(account) === 'BPER' && day >= 30) {
       return nextMonthKey(due + '-01'); // salta un mese in più
     }
     return due;
@@ -3648,7 +3768,7 @@
     const alreadyGenerated = expenses.some(e => e.autoMortgage && e.date && e.date.slice(0, 7) === nowKey);
     if (alreadyGenerated) return false;
 
-    const account = mortgage.account || 'BPER';
+    const account = mortgage.account || accountByBank('BPER');
     const entry = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       date: threshold,
@@ -3957,7 +4077,7 @@
       delta += balanceEffect(buildBatchEntry(it.r, it.amount, v.account, old));
     });
     if (old && old.account === v.account) delta -= balanceEffect(old);
-    const cur = loadData()[ACCOUNT_KEY_MAP[v.account]] || 0;
+    const cur = accountBalance(v.account);
     const eur = n => '€' + n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     let text = '';
     if (filled.length) {
@@ -3982,7 +4102,7 @@
     document.getElementById('batchPasteBtn').style.display = old ? 'none' : '';
     document.getElementById('batchPasteBox').classList.remove('open');
     document.getElementById('batchBody').innerHTML = '';
-    const account = old ? old.account : (def.account && ACCOUNT_KEY_MAP[def.account] ? def.account : 'Fineco');
+    const account = old ? old.account : (def.account && findAccount(def.account) ? def.account : accountByBank('Fineco'));
     document.getElementById('expense-account').value = account;
     document.getElementById('expenseModalOverlay').classList.add('open');
     if (old) {
@@ -4176,7 +4296,7 @@
   let undoTimer = null;
 
   function captureUndo() {
-    return { v5: store.getItem(STORAGE_KEY), exp: store.getItem(EXPENSE_STORAGE_KEY) };
+    return { v5: store.getItem(STORAGE_KEY), acc: store.getItem(ACCOUNTS_STORAGE_KEY), exp: store.getItem(EXPENSE_STORAGE_KEY) };
   }
 
   function hideUndoToast() {
@@ -4203,6 +4323,7 @@
       return;
     }
     if (st.v5 != null) store.setItem(STORAGE_KEY, st.v5);
+    if (st.acc != null) { store.setItem(ACCOUNTS_STORAGE_KEY, st.acc); accounts = migrateLegacyAccounts(); }
     if (st.exp != null) store.setItem(EXPENSE_STORAGE_KEY, st.exp);
     expenses = loadExpenses();
     touchLastModified();
@@ -4320,7 +4441,7 @@
     }
     bar.innerHTML = '<strong>' + sel.length + (sel.length === 1 ? ' selezionato' : ' selezionati') + '</strong>' + catHtml +
       '<select id="bulk-account"><option value="">Conto: non cambiare</option>' +
-      Object.keys(ACCOUNT_KEY_MAP).map(a => '<option value="' + a + '">' + a + '</option>').join('') + '</select>' +
+      accountNames().map(a => '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>').join('') + '</select>' +
       '<button class="btn-save" style="padding:5px 12px;" onclick="applyBulkEdit()">Applica</button>' +
       '<button class="btn-cancel" style="padding:5px 12px;" onclick="clearExpenseSelection()">Deseleziona</button>';
     bar.classList.add('open');
@@ -4594,7 +4715,7 @@
       'Variazione netta per conto nel mese (entrate - uscite): ' + Object.entries(byAccount).map(([a, v]) => a + ' ' + fmt(v)).join(', ') + '.',
       'Categorie di spesa principali (solo uscite): ' + (topCategories || 'nessuna') + '.',
       'Ripartizione uscite per tipo di pagamento: ' + (movementBreakdown || 'nessuna') + '.',
-      'I saldi Fineco/BPER/Revolut mostrati sopra sono GIÀ AGGIORNATI con i movimenti immediati (uscite in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti), scalati o aggiunti automaticamente al momento dell\'inserimento.',
+      'I saldi dei conti mostrati sopra sono GIÀ AGGIORNATI con i movimenti immediati (uscite in contanti, ritiro contanti, carta di debito, bonifico, e tutti gli accrediti), scalati o aggiunti automaticamente al momento dell\'inserimento.',
       pendingCC > 0 ? ('Di cui ' + fmt(pendingCC) + ' pagati con carta di credito questo mese: NON ancora scalati dal saldo, verranno addebitati automaticamente il mese successivo.') : '',
       appliedCC > 0 ? ('Di cui ' + fmt(appliedCC) + ' addebiti carta di credito già applicati al saldo in mesi precedenti.') : '',
       'Questi dati coprono solo i movimenti che Skender ha inserito manualmente: potrebbero non essere completi rispetto alle uscite ed entrate reali del mese.',
@@ -4822,8 +4943,8 @@
 
   function openTransferModal() {
     document.getElementById('transfer-date').value = todayIsoLocal();
-    document.getElementById('transfer-from').value = 'BPER';
-    document.getElementById('transfer-to').value = 'Fineco';
+    document.getElementById('transfer-from').value = accountByBank('BPER');
+    document.getElementById('transfer-to').value = accountByBank('Fineco');
     document.getElementById('transfer-amount').value = '';
     document.getElementById('transfer-description').value = '';
     document.getElementById('transferModalOverlay').classList.add('open');
@@ -4919,7 +5040,7 @@
   // Nessuno dei due include la cronologia della chat: non è un dato di base.
 
   const BACKUP_FORMAT_MARKER = 'DASHBOARD_BACKUP';
-  const BACKUP_FORMAT_VERSION = 'v1';
+  const BACKUP_FORMAT_VERSION = 'v2'; // v2: lista conti dinamica (LISTA_CONTI); i backup v1 si importano ancora
 
   function csvEscape(val) {
     const s = (val === null || val === undefined) ? '' : String(val);
@@ -4964,9 +5085,7 @@
 
     rows.push(csvRow(['SEZIONE', 'CONTI (Liquidità)']));
     rows.push(csvRow(['Conto', 'Saldo (€)']));
-    rows.push(csvRow(['Fineco', d.fineco]));
-    rows.push(csvRow(['BPER', d.bper]));
-    rows.push(csvRow(['Revolut', d.revolut]));
+    accounts.forEach(a => rows.push(csvRow([a.name, a.balance || 0])));
     rows.push('');
 
     rows.push(csvRow(['SEZIONE', 'INVESTIMENTI']));
@@ -5033,10 +5152,14 @@
 
     rows.push(csvRow(['SEZIONE', 'CONTI']));
     rows.push(csvRow(['key', 'value']));
-    rows.push(csvRow(['fineco', d.fineco]));
-    rows.push(csvRow(['bper', d.bper]));
-    rows.push(csvRow(['revolut', d.revolut]));
     rows.push(csvRow(['lastUpdated', d.lastUpdated]));
+    rows.push('');
+
+    rows.push(csvRow(['SEZIONE', 'LISTA_CONTI']));
+    rows.push(csvRow(['id', 'name', 'bank', 'note', 'balance']));
+    accounts.forEach(a => {
+      rows.push(csvRow([a.id, a.name, a.bank || '', a.note || '', a.balance || 0]));
+    });
     rows.push('');
 
     rows.push(csvRow(['SEZIONE', 'FLUSSI']));
@@ -5243,7 +5366,7 @@
       if (idx >= lines.length) throw new Error('File vuoto o illeggibile.');
 
       const markerFields = parseCsvLine(lines[idx]);
-      if (markerFields[0] !== BACKUP_FORMAT_MARKER || markerFields[1] !== BACKUP_FORMAT_VERSION) {
+      if (markerFields[0] !== BACKUP_FORMAT_MARKER || ['v1', BACKUP_FORMAT_VERSION].indexOf(markerFields[1]) === -1) {
         throw new Error('Questo file non è un backup valido generato da questa dashboard. Se hai scaricato un "Report leggibile", quello non può essere reimportato: usa "💾 Backup completo" in fase di export.');
       }
       idx++;
@@ -5302,10 +5425,25 @@
       contiRows.forEach(r => { contiMap[r.key] = r.value; });
       const newD = {
         lastUpdated: contiMap.lastUpdated || todayIsoLocal(),
-        fineco: parseFloat(contiMap.fineco) || 0,
-        bper: parseFloat(contiMap.bper) || 0,
-        revolut: parseFloat(contiMap.revolut) || 0,
       };
+
+      // Backup v2: lista dei conti; backup v1: tre conti fissi dentro CONTI.
+      const newAccounts = sections['LISTA_CONTI']
+        ? sections['LISTA_CONTI'].map(r => ({
+            id: r.id || ('acc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+            name: r.name || '',
+            bank: ['Fineco', 'BPER', 'Revolut'].indexOf(r.bank) !== -1 ? r.bank : '',
+            note: r.note || '',
+            balance: parseFloat(r.balance) || 0,
+          })).filter(a => a.name)
+        : [
+            { id: 'fineco', name: 'Fineco', bank: 'Fineco', note: 'Conto principale + cash PAC', balance: parseFloat(contiMap.fineco) || 0 },
+            { id: 'bper', name: 'BPER', bank: 'BPER', note: 'Conto con mutuo e spese casa', balance: parseFloat(contiMap.bper) || 0 },
+            { id: 'revolut', name: 'Revolut', bank: 'Revolut', note: 'Spese quotidiane', balance: parseFloat(contiMap.revolut) || 0 },
+          ];
+      if (!newAccounts.length) {
+        throw new Error('Il backup non contiene nessun conto: importazione annullata per sicurezza.');
+      }
 
       // Accetta sia la sezione FLUSSI (formato attuale, lista dinamica) sia i
       // vecchi backup fatti prima dell'introduzione dei flussi dinamici, dove
@@ -5388,7 +5526,7 @@
             'Tutte le modifiche fatte dopo il backup andranno PERSE.\n\n'
           : '') +
         'Stai per SOSTITUIRE tutti i dati attuali con quelli del backup generato il ' + (generatedOn || lastModifiedBackup) + ':\n\n' +
-        '- Conti: Fineco/BPER/Revolut\n' +
+        '- Conti: ' + newAccounts.length + ' (attuali: ' + accounts.length + ')\n' +
         '- Flussi mensili: ' + newFlows.length + ' (attuali: ' + flows.length + ')\n' +
         '- Investimenti: ' + newInvestments.length + ' (attuali: ' + investments.length + ')\n' +
         '- Immobili: ' + newProperties.length + ' (attuali: ' + properties.length + ')\n' +
@@ -5400,6 +5538,8 @@
       if (isOlderBackup && !confirm('Conferma definitiva: stai ripristinando dati PIÙ VECCHI di quelli attuali (backup del ' + lastModifiedBackup + ' contro dati del ' + currentLastModified + '). Le modifiche successive al backup verranno cancellate e NON potranno essere recuperate, a meno di averne un backup più recente. Procedere davvero?')) return;
 
       store.setItem(STORAGE_KEY, JSON.stringify(newD));
+      accounts = newAccounts;
+      saveAccounts(accounts);
       flows = newFlows;
       saveFlows(flows);
       investments = newInvestments;
@@ -5421,6 +5561,7 @@
       renderExpenses();
       renderAnnualAnalysis();
       renderTransfers();
+      renderMortgageDetails();
 
       alert('Importazione completata: dashboard ricreata dal backup del ' + (generatedOn || lastModifiedBackup) + '.');
     } catch (err) {
@@ -5437,9 +5578,9 @@
     const marketTotal = sumInvestments(marketList);
     const houseTotal = propertiesTotal();
     const mortgageTot = mortgageTotal();
-    const liquidCash = d.fineco + d.bper + d.revolut;
-    const liquidAssets = marketTotal + d.fineco + d.bper + d.revolut;
-    const totalAssets = houseTotal + pensionTotal + marketTotal + d.fineco + d.bper + d.revolut;
+    const liquidCash = accountsTotal();
+    const liquidAssets = marketTotal + liquidCash;
+    const totalAssets = houseTotal + pensionTotal + marketTotal + liquidCash;
     const netWorth = totalAssets - mortgageTot;
     const liquidNet = liquidAssets - mortgageTot;
     const pensionAnnual = (d.pensionEmp + d.pensionAz) * 12;
@@ -5455,8 +5596,8 @@
         investments.some(i => i.document) ? 'KID/KIID di ' + investments.filter(i => i.document).map(i => i.name).join(', ') : null,
         mortgage.document ? 'piano di ammortamento del mutuo (' + mortgage.document.name + ')' : null,
       ].filter(Boolean).join(' · ') || 'nessuno allegato',
-      '- Saldo attuale conti: Fineco ' + fmt(d.fineco) + ', BPER ' + fmt(d.bper) + ', Revolut ' + fmt(d.revolut) + ' (liquidità totale ' + fmt(liquidCash) + ')',
-      '- Stipendio netto mensile: totale ' + fmt(d.salary) + ' (accredito su Fineco: ' + fmt(d.salaryFineco) + ', accredito su BPER: ' + fmt(d.salaryBper) + ')',
+      '- Saldo attuale conti: ' + (accounts.length ? accounts.map(a => a.name + ' ' + fmt(a.balance || 0)).join(', ') : 'nessun conto') + ' (liquidità totale ' + fmt(liquidCash) + ')',
+      '- Stipendio netto mensile: totale ' + fmt(d.salary) + ' (accrediti per conto: ' + salaryByAccountText(', ') + ')',
       '- Contributi mensili a Cometa: dipendente ' + fmt(d.pensionEmp) + ' + azienda ' + fmt(d.pensionAz) + ' = ' + fmt(d.pensionEmp + d.pensionAz) + '/mese (' + fmt(pensionAnnual) + '/anno, limite deducibile 2026: ' + fmt(PENSION_LIMIT) + ')',
       '- Registro movimenti (inserito manualmente da Skender): ' + formatExpensesSummary(loadExpenses()),
       '- ' + formatTransfersSummary(loadTransfers()),
@@ -6227,13 +6368,13 @@
     const marketInvTotal = sumInvestments(marketList);
     const houseTotal = propertiesTotal();
     const mortgageTot = mortgageTotal();
-    const totalAssets = houseTotal + pensionInvTotal + marketInvTotal + d.fineco + d.bper + d.revolut;
+    const totalAssets = houseTotal + pensionInvTotal + marketInvTotal + accountsTotal();
     const netWorth = totalAssets - mortgageTot;
-    // Patrimonio liquido = liquidità sui conti (Fineco+BPER+Revolut) + investimenti
+    // Patrimonio liquido = liquidità sui conti + investimenti
     // di mercato (riscattabili/vendibili a breve) − mutui residui. ESCLUDE
     // deliberatamente pensione/TFR (Cometa) e immobili, perché non liquidabili a
     // breve termine — vedi anche il sottotitolo nella card "Patrimonio Liquido".
-    const liquidAssets = marketInvTotal + d.fineco + d.bper + d.revolut;
+    const liquidAssets = marketInvTotal + accountsTotal();
     const liquidNet = liquidAssets - mortgageTot;
 
     document.getElementById('netWorth').textContent = fmt(netWorth);
@@ -6243,14 +6384,13 @@
     document.getElementById('cometaHero').textContent = fmt(pensionInvTotal);
     renderInvestments();
     renderProperties();
-    document.getElementById('finecoVal').textContent = fmt(d.fineco);
-    document.getElementById('bperVal').textContent = fmt(d.bper);
-    document.getElementById('revolutVal').textContent = fmt(d.revolut);
+    populateAccountSelects();
+    renderAccounts();
 
     const pensionTotal = d.pensionEmp + d.pensionAz;
     const pensionAnnual = pensionTotal * 12;
     document.getElementById('salaryDisplay').textContent = fmt(d.salary) + '/mese';
-    document.getElementById('salarySplitDisplay').textContent = 'Fineco ' + fmt(d.salaryFineco) + ' · BPER ' + fmt(d.salaryBper);
+    document.getElementById('salarySplitDisplay').textContent = salaryByAccountText(' · ');
     document.getElementById('pensionEmpDisplay').textContent = fmt(d.pensionEmp) + '/mese';
     document.getElementById('pensionAzDisplay').textContent = fmt(d.pensionAz) + '/mese';
     document.getElementById('pensionTotalDisplay').textContent = fmt(pensionTotal) + '/mese';
@@ -6280,9 +6420,7 @@
     const segments = [
       ...propertySegments,
       ...investmentSegments,
-      { label: 'Fineco Cash', value: d.fineco, color: '#059669' },
-      { label: 'BPER Cash', value: d.bper, color: '#10b981' },
-      { label: 'Revolut', value: d.revolut, color: '#34d399' },
+      ...accounts.map((a, i) => ({ label: a.name, value: a.balance || 0, color: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length] })),
     ].filter(x => x.value > 0);
 
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
@@ -6329,8 +6467,22 @@
 
   function openModal() {
     const d = loadData();
-    ['fineco','bper','revolut']
-      .forEach(k => { document.getElementById('input-' + k).value = d[k]; });
+    const wrap = document.getElementById('modalAccountsFields');
+    wrap.innerHTML = '';
+    accounts.forEach((a, i) => {
+      const row = document.createElement('div');
+      row.className = 'field-row';
+      if (i === accounts.length - 1) row.style.marginBottom = '0';
+      const label = document.createElement('label');
+      label.className = 'field-label';
+      label.textContent = a.name + ' (€)';
+      const input = document.createElement('input');
+      input.type = 'number'; input.step = '0.01'; input.className = 'field-input';
+      input.dataset.accountId = a.id;
+      input.value = a.balance || 0;
+      row.appendChild(label); row.appendChild(input);
+      wrap.appendChild(row);
+    });
     document.getElementById('modalOverlay').classList.add('open');
   }
 
@@ -6355,8 +6507,8 @@
     if (e.target === this) closeInvestmentModal();
   });
 
-  document.getElementById('accountBalanceModalOverlay').addEventListener('click', function(e) {
-    if (e.target === this) closeAccountBalanceModal();
+  document.getElementById('accountModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeAccountModal();
   });
 
   document.getElementById('propertyModalOverlay').addEventListener('click', function(e) {
