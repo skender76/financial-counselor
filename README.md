@@ -121,7 +121,7 @@ sandbox/sandbox.sh verify         # controlla l'isolamento ed esegue i test
 sandbox/sandbox.sh pull BRANCH    # porta un branch del sandbox nel repository reale
 ```
 
-Come funziona: l'immagine contiene solo Python e le dipendenze; il codice arriva da un `git clone` locale (quindi solo file tracciati) montato in `/work`. La VM Colima ha un profilo dedicato che monta solo `~/dashboard-sandbox`, non la home. Il container non ha rete (`--network none`), ha il filesystem in sola lettura, nessuna capability e nessun remote git: gli agenti possono committare, ma il push si fa a mano dal repository reale, dopo `pull` e la revisione del diff. I worktree di `AGENTS.md` si creano in `/work` accanto a `repo/`.
+Come funziona: l'immagine contiene solo Python e le dipendenze; il codice arriva da un `git clone` locale (quindi solo file tracciati) montato in `/work`. La VM Colima ha un profilo dedicato che monta solo `~/dashboard-sandbox`, non la home. Senza `--net` il container non ha rete (`--network none`); con `--net` ha solo gli host elencati in `sandbox/allowlist.txt`, tramite un proxy dedicato alla sessione (vedi sotto). Ha il filesystem in sola lettura, nessuna capability e nessun remote git: gli agenti possono committare, ma il push si fa a mano dal repository reale, dopo `pull` e la revisione del diff. I worktree di `AGENTS.md` si creano in `/work` accanto a `repo/`.
 
 Per far girare anche l'agente nel sandbox (così i suoi strumenti di file e la shell vedono solo `/work`):
 
@@ -135,7 +135,13 @@ sandbox/sandbox.sh agent-stop     # ferma gli agenti rimasti in esecuzione
 
 Il sandbox è obbligatorio (vedi `AGENTS.md`, sezione 8). `sandbox/require-sandbox.sh` è la guardia: fuori dal sandbox esce con errore, e l'hook di progetto `.claude/settings.json` la chiama prima di ogni azione di Claude Code, quindi una sessione avviata sul Mac viene bloccata. «Dentro il sandbox» vuol dire che esiste `/etc/dashboard-sandbox`, scritto dall'immagine (dopo questa modifica ricostruisci l'immagine con `setup`). Uscita di emergenza, solo tua: `DASHBOARD_ALLOW_HOST=1`; ogni uso è scritto in `~/dashboard-sandbox/override.log`. `sandbox/sandbox.sh status` è il controllo rapido (VM, immagine, clone, segno nell'immagine) da fare a ogni passaggio di consegne; `verify` una volta per item. La guardia evita errori e dimenticanze, non ferma un agente ostile.
 
-Storia e impostazioni dell'agente stanno in `~/dashboard-sandbox/agent-home` (fuori dal clone git, mai nei commit). Limiti noti: con `--net` la rete è aperta finché non esiste l'elenco degli host consentiti (ITEM-005); `--env NOME` inoltra una variabile dal tuo ambiente (mai il valore sulla riga di comando) e la gestione delle credenziali è ITEM-006. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
+Storia e impostazioni dell'agente stanno in `~/dashboard-sandbox/agent-home` (fuori dal clone git, mai nei commit). `--env NOME` inoltra una variabile dal tuo ambiente (mai il valore sulla riga di comando); la gestione delle credenziali è ITEM-006. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
+
+### Allowlist di rete in uscita (ITEM-005)
+
+`--net` (su `run` o `agent`) non apre la rete: collega il container a una rete interna dedicata alla sessione, raggiungibile solo tramite un proxy che lascia passare esclusivamente gli host elencati in `sandbox/allowlist.txt` (inizialmente solo `api.anthropic.com`). La rete interna non ha nessuna rotta verso l'esterno: un agente che ignorasse le variabili `HTTP_PROXY`/`HTTPS_PROXY` e provasse una connessione diretta (per nome o per IP) non trova comunque nulla da raggiungere. Proxy e rete sono creati e distrutti per ogni sessione. `sandbox/allowlist.txt` è un file tracciato: cambiarlo richiede la stessa approvazione umana di ogni merge su `main` (`AGENTS.md`, sezione 7).
+
+L'indice dei pacchetti (`pypi.org`, `files.pythonhosted.org`) non è nell'allowlist di base: `--allow-pip` (richiede `--net`) lo aggiunge solo per quella sessione, es. `sandbox/sandbox.sh run --net --allow-pip -- pip install ...`.
 
 ## Dati e sicurezza
 
