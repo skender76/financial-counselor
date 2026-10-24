@@ -24,15 +24,9 @@ Only items that are not `DONE` keep their full text here. A `DONE` item is reduc
 
 ## ITEM-005 — Egress allowlist
 
-- **Status:** OPEN
+- **Status:** IN PROGRESS — `docs/items/ITEM-005.func.md`, `docs/items/ITEM-005.tech.md`.
 - **Why:** with open network an agent (or code it runs) can send data anywhere, and `--network none` cannot be used once the agent runs inside the container and must reach its model provider.
 - **Goal:** outbound connections from the sandbox are limited to a short allowlist, enforced outside the agent's control.
-- **Scope (to be refined by the Functional and Technical Lead agents):**
-  - Only the model provider's hosts (and, when asked, the package index during setup) are reachable; everything else fails.
-  - Tests and the local server stay offline as in ITEM-001.
-  - The allowlist is a visible file in the repository, changes to it need human approval.
-- **Open questions:** mechanism with Colima and docker (proxy container on an internal network, firewall rules in the VM, DNS filtering)? How are other tools in the container (git, pip) handled?
-- **Done when:** from inside the sandbox a connection to an allowlisted host works and a connection to any other host fails, also when the agent tries to bypass the proxy settings.
 - **Depends on:** ITEM-003.
 
 ## ITEM-006 — Agent credentials
