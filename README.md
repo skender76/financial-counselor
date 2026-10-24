@@ -121,7 +121,19 @@ sandbox/sandbox.sh verify         # controlla l'isolamento ed esegue i test
 sandbox/sandbox.sh pull BRANCH    # porta un branch del sandbox nel repository reale
 ```
 
-Come funziona: l'immagine contiene solo Python e le dipendenze; il codice arriva da un `git clone` locale (quindi solo file tracciati) montato in `/work`. La VM Colima ha un profilo dedicato che monta solo `~/dashboard-sandbox`, non la home. Il container non ha rete (`--network none`), ha il filesystem in sola lettura, nessuna capability e nessun remote git: gli agenti possono committare, ma il push si fa a mano dal repository reale, dopo `pull` e la revisione del diff. I worktree di `AGENTS.md` si creano in `/work` accanto a `repo/`. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
+Come funziona: l'immagine contiene solo Python e le dipendenze; il codice arriva da un `git clone` locale (quindi solo file tracciati) montato in `/work`. La VM Colima ha un profilo dedicato che monta solo `~/dashboard-sandbox`, non la home. Il container non ha rete (`--network none`), ha il filesystem in sola lettura, nessuna capability e nessun remote git: gli agenti possono committare, ma il push si fa a mano dal repository reale, dopo `pull` e la revisione del diff. I worktree di `AGENTS.md` si creano in `/work` accanto a `repo/`.
+
+Per far girare anche l'agente nel sandbox (così i suoi strumenti di file e la shell vedono solo `/work`):
+
+```bash
+# una volta: installa nell'immagine la CLI dell'agente che usi (comando di shell a tua scelta)
+SANDBOX_AGENT_INSTALL='...' sandbox/sandbox.sh setup
+# avvio, da un terminale; Ctrl+C lo ferma
+sandbox/sandbox.sh agent --net --env NOME_VARIABILE -- <comando-dell-agente>
+sandbox/sandbox.sh agent-stop     # ferma gli agenti rimasti in esecuzione
+```
+
+Storia e impostazioni dell'agente stanno in `~/dashboard-sandbox/agent-home` (fuori dal clone git, mai nei commit). Limiti noti: con `--net` la rete è aperta finché non esiste l'elenco degli host consentiti (ITEM-005); `--env NOME` inoltra una variabile dal tuo ambiente (mai il valore sulla riga di comando) e la gestione delle credenziali è ITEM-006. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
 
 ## Dati e sicurezza
 
