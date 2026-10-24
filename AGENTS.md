@@ -15,7 +15,7 @@ This file is written in English; the product itself (UI text, code comments, log
   - Never use `localStorage`/`sessionStorage`/IndexedDB for data; use `store`.
   - Changes to the shape of stored data need a migration (`migrateLegacy*` / version bump).
   - New UI text, comments and log messages are in Italian.
-- **Tests:** the project has no test suite yet. Until one exists, "tests" means the checks defined in the item's `.tech.md`: Python unit tests in `tests/` run with `.venv/bin/python -m unittest discover tests`, plus a manual or scripted check of each acceptance test against a running `server.py` on a throwaway DB (`DASHBOARD_DB=/tmp/test.db`). If `tests/` does not exist, the first item to implement is the test harness (`ITEM-000`), and no other item may reach READY FOR DEV before it is DONE.
+- **Tests:** the test suite lives in `tests/` and runs with `.venv/bin/python -m unittest discover tests` (inside the sandbox, or from outside with `sandbox/sandbox.sh test`). It starts `server.py` on a throwaway DB; see `CLAUDE.md`. Each acceptance test of an item must be covered by an automated test or, when it cannot be automated, by a check written in the item's `.tech.md`.
 - Python modules are loaded at startup: restart `server.py` after changing Python code before testing.
 
 ## 2. ROADMAP.md
@@ -55,7 +55,7 @@ Human picks item (via Orchestrator)
 
 | Agent | Input | Output | Done when |
 |---|---|---|---|
-| **Orchestrator** | `ROADMAP.md`, outputs of all agents | Next item proposal for the human, status updates, handoffs | Every handoff has the input the next agent needs; it never writes feature code. |
+| **Orchestrator** | `ROADMAP.md`, outputs of all agents | Next item proposal for the human, status updates, handoffs | Every handoff has the input the next agent needs; it never writes feature code. Before each handoff it runs `sandbox/sandbox.sh status`, and `sandbox/sandbox.sh verify` once at the start of every item (section 8). A failure stops the handoff and sets `NEEDS HUMAN`. |
 | **Functional Agent** | The selected item | `ITEM-XXX.func.md` | Every user story has at least one acceptance test, in checkable form (given/when/then). |
 | **Technical Lead Agent** | `ITEM-XXX.func.md`, `CLAUDE.md`, existing code | `ITEM-XXX.tech.md` | Tasks have a clear target and tests; contracts/interfaces between tasks are defined; each task lists the file regions it may edit (see section 6); every acceptance test is covered by a task. |
 | **Architect Agent** | `ITEM-XXX.tech.md` (and `.func.md` for context) | Approval, or written feedback | Checks consistency with `CLAUDE.md` and the broader design. On feedback the **Technical Lead rewrites `ITEM-XXX.tech.md`**; the `.func.md` changes only if a requirement is actually wrong. With no feedback the item becomes READY FOR DEV. |
@@ -82,7 +82,7 @@ Route each failing test by cause, not always back to the Technical Lead:
 
 ## 6. Branches and parallel work
 
-- Feature branch: `feature/ITEM-XXX`. Task worktrees: `../wt-ITEM-XXX-T<n>` on branch `feature/ITEM-XXX-T<n>`, created with `git worktree add`.
+- Feature branch: `feature/ITEM-XXX`. Task worktrees: `/work/wt-ITEM-XXX-T<n>` (inside the sandbox, next to `repo/`) on branch `feature/ITEM-XXX-T<n>`, created with `git worktree add`.
 - Almost all UI code lives in `financial-dashboard.html`, so parallel tasks conflict easily. The Technical Lead must assign non-overlapping regions (named `// =====` sections or separate functions) to each task, and tasks that must edit the same region are made sequential, not parallel.
 - The Integrator merges task branches into `feature/ITEM-XXX` one at a time, resolving conflicts before running tests.
 - Commits are in Italian, one logical change each, with the attribution line required by the session.
@@ -96,3 +96,13 @@ A human must approve:
 - any change that touches `auth.py`, the security parts of `server.py` (sessions, CSRF, CSP, Host/Origin checks, encryption), `mailer.py`, or the shape of stored data.
 
 Agents must never: push, deploy or restart the VPS; touch or read `app.db`, `dati.json`, `ai-config.json` or any real API key; rewrite git history on shared branches; skip or weaken a failing test to make it pass.
+
+## 8. The sandbox is mandatory
+
+All development happens in the sandbox (`sandbox/`, see `README.md` and `CLAUDE.md`):
+
+- Agents run **inside** it: `sandbox/sandbox.sh agent --net -- <agent command>` from a terminal. Tests, the local server, worktrees (`/work/wt-...`) and commits all happen there, on the clean clone `~/dashboard-sandbox/repo`.
+- Work reaches the real repository only with `sandbox/sandbox.sh pull BRANCH`, followed by the human review of section 7. `git push` is not possible from the sandbox and stays manual.
+- `sandbox/require-sandbox.sh` is the guard: it exits with an error when it is not run inside the sandbox. The project hook in `.claude/settings.json` calls it before every tool call, so Claude Code refuses to work outside the sandbox. Other agents or wrappers must call it before doing anything.
+- The only way around it is the owner's emergency override, `DASHBOARD_ALLOW_HOST=1`, and every use is recorded in `~/dashboard-sandbox/override.log`. An agent must never set it by itself.
+- The guard prevents mistakes and omissions. It is not a barrier against a hostile agent: that is the job of the container isolation (ITEM-003) and, later, the network allowlist (ITEM-005).

@@ -133,6 +133,8 @@ sandbox/sandbox.sh agent --net --env NOME_VARIABILE -- <comando-dell-agente>
 sandbox/sandbox.sh agent-stop     # ferma gli agenti rimasti in esecuzione
 ```
 
+Il sandbox è obbligatorio (vedi `AGENTS.md`, sezione 8). `sandbox/require-sandbox.sh` è la guardia: fuori dal sandbox esce con errore, e l'hook di progetto `.claude/settings.json` la chiama prima di ogni azione di Claude Code, quindi una sessione avviata sul Mac viene bloccata. «Dentro il sandbox» vuol dire che esiste `/etc/dashboard-sandbox`, scritto dall'immagine (dopo questa modifica ricostruisci l'immagine con `setup`). Uscita di emergenza, solo tua: `DASHBOARD_ALLOW_HOST=1`; ogni uso è scritto in `~/dashboard-sandbox/override.log`. `sandbox/sandbox.sh status` è il controllo rapido (VM, immagine, clone, segno nell'immagine) da fare a ogni passaggio di consegne; `verify` una volta per item. La guardia evita errori e dimenticanze, non ferma un agente ostile.
+
 Storia e impostazioni dell'agente stanno in `~/dashboard-sandbox/agent-home` (fuori dal clone git, mai nei commit). Limiti noti: con `--net` la rete è aperta finché non esiste l'elenco degli host consentiti (ITEM-005); `--env NOME` inoltra una variabile dal tuo ambiente (mai il valore sulla riga di comando) e la gestione delle credenziali è ITEM-006. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
 
 ## Dati e sicurezza
