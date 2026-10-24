@@ -1,0 +1,10 @@
+# Allowlist delle uscite di rete del sandbox (ITEM-005).
+# Un host per riga, niente schema né percorso. Righe vuote e commenti (#) ignorati.
+# Le modifiche a questo file passano dalla stessa approvazione umana richiesta
+# per ogni merge su main (AGENTS.md, sezione 7): non c'è un modo per cambiarlo
+# da dentro una sessione nel sandbox.
+#
+# L'indice dei pacchetti (pypi.org, files.pythonhosted.org) NON va qui: si
+# aggiunge solo per sessione con `sandbox.sh agent/run --net --allow-pip`.
+
+api.anthropic.com
