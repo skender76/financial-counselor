@@ -96,6 +96,7 @@ Le chiavi sono salvate per utente in `app.db` (tabella `user_ai_config`), mai ne
 | `mailer.py` | Invio email via SMTP |
 | `ai_providers.py` | Livello AI indipendente dal fornitore e gestione delle chiavi |
 | `avvia-dashboard.command` | Launcher per macOS |
+| `sandbox/` | Sandbox di sviluppo (container su Colima, vedi «Sandbox di sviluppo») |
 | `tests/` | Test automatici (vedi «Test») |
 | `app.db` | Account, dati finanziari e chiavi API di tutti gli utenti (ignorato da git) |
 
@@ -106,6 +107,21 @@ Le chiavi sono salvate per utente in `app.db` (tabella `user_ai_config`), mai ne
 ```
 
 I test usano solo la libreria standard. Avviano `server.py` su una porta libera con un database temporaneo e una chiave maestra di prova (registrazione aperta, email disattivate): non leggono né scrivono `app.db`, `dati.json`, `ai-config.json` o `.env`. Le fixture degli estratti conto in `tests/fixtures/` sono sintetiche (nessun dato reale) e si rigenerano con `tests/make_fixtures.py`.
+
+## Sandbox di sviluppo
+
+Il ciclo di sviluppo (agenti, test, server di prova) può girare in un container che non vede `app.db`, `.env`, `dati.json`, `ai-config.json`, `esempi-estratti/` né la tua home. Usa strumenti standard e gratuiti: Colima e la CLI docker.
+
+```bash
+brew install colima docker        # una volta
+sandbox/sandbox.sh setup          # VM dedicata, immagine, checkout pulito in ~/dashboard-sandbox/repo
+sandbox/sandbox.sh test           # i test nel sandbox
+sandbox/sandbox.sh run            # shell nel sandbox (aggiungi --net per abilitare la rete)
+sandbox/sandbox.sh verify         # controlla l'isolamento ed esegue i test
+sandbox/sandbox.sh pull BRANCH    # porta un branch del sandbox nel repository reale
+```
+
+Come funziona: l'immagine contiene solo Python e le dipendenze; il codice arriva da un `git clone` locale (quindi solo file tracciati) montato in `/work`. La VM Colima ha un profilo dedicato che monta solo `~/dashboard-sandbox`, non la home. Il container non ha rete (`--network none`), ha il filesystem in sola lettura, nessuna capability e nessun remote git: gli agenti possono committare, ma il push si fa a mano dal repository reale, dopo `pull` e la revisione del diff. I worktree di `AGENTS.md` si creano in `/work` accanto a `repo/`. `verify --hash-app-db` confronta anche lo SHA-256 del tuo `app.db` prima e dopo: lancialo solo tu.
 
 ## Dati e sicurezza
 
