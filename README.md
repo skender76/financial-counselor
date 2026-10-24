@@ -96,7 +96,16 @@ Le chiavi sono salvate per utente in `app.db` (tabella `user_ai_config`), mai ne
 | `mailer.py` | Invio email via SMTP |
 | `ai_providers.py` | Livello AI indipendente dal fornitore e gestione delle chiavi |
 | `avvia-dashboard.command` | Launcher per macOS |
+| `tests/` | Test automatici (vedi «Test») |
 | `app.db` | Account, dati finanziari e chiavi API di tutti gli utenti (ignorato da git) |
+
+## Test
+
+```bash
+.venv/bin/python -m unittest discover tests
+```
+
+I test usano solo la libreria standard. Avviano `server.py` su una porta libera con un database temporaneo e una chiave maestra di prova (registrazione aperta, email disattivate): non leggono né scrivono `app.db`, `dati.json`, `ai-config.json` o `.env`. Le fixture degli estratti conto in `tests/fixtures/` sono sintetiche (nessun dato reale) e si rigenerano con `tests/make_fixtures.py`.
 
 ## Dati e sicurezza
 
