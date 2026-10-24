@@ -31,6 +31,7 @@ This file is written in English; the product itself (UI text, code comments, log
 | `NEEDS HUMAN` | Loop limit reached or a human gate is pending | Orchestrator |
 | `DONE` | Merged on `main`, tests green, documented | Documentation Agent, after the merge |
 
+- When an item becomes `DONE`, its full text moves to `ROADMAP-DONE.md` and `ROADMAP.md` keeps only its title and status, with a pointer to that file. Agents read `ROADMAP.md` by default and open `ROADMAP-DONE.md` only when they need the history of a finished item.
 - `ITEM-XXX.func.md`: user stories; each one has a list of acceptance tests.
 - `ITEM-XXX.tech.md`: technical tasks; each one has a target, the files/sections it may touch, its tests, and the contracts/interfaces shared with the other tasks.
 - Both files live in `docs/items/` unless the repository already uses another folder.
@@ -61,7 +62,7 @@ Human picks item (via Orchestrator)
 | **Development Agents** | One task of `ITEM-XXX.tech.md` | Code and tests for that task, committed on the task's worktree branch | Task tests pass. One agent per task; a task that depends on another waits for it. |
 | **Integrator & Tester Agent** | All finished tasks | Integrated `feature/ITEM-XXX`, test report | Acceptance and unit tests all pass. Otherwise it classifies each failure (section 5). |
 | **Documentation Agent** | Passing feature branch | Updated `README`/`CLAUDE.md` when architecture, endpoints, env vars or stored data change; item notes | Docs match the code. It does **not** set DONE yet. |
-| **Final Merger Agent** | Human-approved feature branch | Merge on `main`, test run on `main`, `ROADMAP.md` → DONE | Tests green on `main`. If they fail after the merge: revert the merge and set `NEEDS HUMAN`. |
+| **Final Merger Agent** | Human-approved feature branch | Merge on `main`, test run on `main`, `ROADMAP.md` → DONE (full text moved to `ROADMAP-DONE.md`, a stub left behind) | Tests green on `main`. If they fail after the merge: revert the merge and set `NEEDS HUMAN`. |
 
 ## 5. Failures and loop limits
 
