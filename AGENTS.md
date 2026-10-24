@@ -6,7 +6,7 @@ This file is written in English; the product itself (UI text, code comments, log
 
 ## 1. Prerequisites (read before doing anything)
 
-- **`CLAUDE.md` is mandatory reading for every agent.** It describes the architecture and the hard rules of the project. This file never overrides it.
+- **`CLAUDE.md` is mandatory reading for every agent.** It describes the architecture and the hard rules of the project. This file never overrides it. Before editing a file, also read its notes in `docs/notes/` (listed in the Files section of `CLAUDE.md`).
 - Rules that most often get broken, repeated here on purpose:
   - Never commit `app.db`, `dati.json` or `ai-config.json`; never read or print their contents.
   - Every data function takes `user_id` from the session, never from request input.
